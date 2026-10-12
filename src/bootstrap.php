@@ -232,7 +232,7 @@ function mb_strtoupper_fallback(string $text): string {
 }
 function page_footer(): void {
     if (!empty($GLOBALS['metrio_authenticated_layout'])) {
-        echo '</main><footer class="app-footer"><span>© '.date('Y').' Metrio · Evidence energií</span><span>Postaveno pro přehled o každé spotřebě</span></footer></div></div>';
+        echo '</main><footer class="app-footer"><span>© '.date('Y').' Metrio · Evidence energií · <a href="https://www.filipek-czech.cz" target="_blank">Pavel Filípek</a></span><span>Postaveno pro přehled o každé spotřebě</span></footer></div></div>';
     } else {
         echo '</main></div>';
     }
