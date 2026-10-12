@@ -8,7 +8,7 @@ První funkční verze systému pro evidenci elektřiny, plynu, studené vody, t
 - MariaDB 10.6+ (testovací Docker Compose používá MariaDB 11.4).
 - Apache/Nginx se směrováním na `public/`; na WEDOS Apache použijte kořenový `.htaccess` a postup níže. Privátní soubory nesmí být veřejně přístupné.
 - HTTPS pro produkci a používání kamery v mobilním prohlížeči.
-- Pro AI čtení fotografie volitelně OpenAI API klíč (služba je placená dle jejího tarifu a fotografie se odesílá externímu poskytovateli).
+- Pro AI čtení fotografie volitelně Google Gemini API klíč (dostupnost a případné poplatky se řídí tarifem Google; fotografie se odesílá externímu poskytovateli).
 
 ## Instalace na běžném hostingu
 
@@ -61,9 +61,24 @@ Při změně koeficientu uvnitř období se dotčené měřidlo **nevypočítá*
 
 Na mobilu otevřete **Odečty → Vyfotit měřidlo**. HTML atribut `capture="environment"` požádá kompatibilní prohlížeč o zadní fotoaparát; některé prohlížeče mohou namísto kamery nabídnout výběr souboru.
 
-Server přijímá jen JPG/PNG/WEBP do 5 MB, kontroluje MIME a strukturu obrázku, ukládá jej pod náhodným názvem v `storage/photos/` mimo veřejný adresář a předává jej pro AI zpracování pouze tehdy, pokud je v `.env` nastaveno `OPENAI_API_KEY`. AI zkusí určit **kumulativní stav číselníku** prostřednictvím OpenAI Responses API, navrhne hodnotu a upozornění. Uživatel návrh ručně ověří a potvrdí; **bez potvrzení se žádný odečet nezaloží**. Pokud služba selže nebo není nastavena, lze hodnotu normálně opsat. Fotografie jsou chráněny přihlášením a oprávněním a automatické veřejné URL k nim neexistují.
+Server přijímá jen JPG/PNG/WEBP do 5 MB, kontroluje MIME a strukturu obrázku, ukládá jej pod náhodným názvem v `storage/photos/` mimo veřejný adresář a předává jej pro AI zpracování pouze tehdy, pokud je v `.env` nastaveno `GEMINI_API_KEY`. AI zkusí určit **kumulativní stav číselníku** prostřednictvím Google Gemini API (`generateContent`), navrhne hodnotu a upozornění. Uživatel návrh ručně ověří a potvrdí; **bez potvrzení se žádný odečet nezaloží**. Pokud služba selže nebo není nastavena, lze hodnotu normálně opsat. Fotografie jsou chráněny přihlášením a oprávněním a automatické veřejné URL k nim neexistují.
 
-Důležité: fotografie může obsahovat identifikátory a adresy; pokud zapnete AI, obsah je odeslán službě OpenAI. Zajistěte informování uživatelů a pravidla uchovávání/mazání fotografií odpovídající vašemu provozu. Před produkcí ověřte parametry zpracování dat dle účtu poskytovatele.
+Důležité: fotografie může obsahovat identifikátory a adresy; pokud zapnete AI, obsah je odeslán službě Google Gemini. Zajistěte informování uživatelů a pravidla uchovávání/mazání fotografií odpovídající vašemu provozu. Před produkcí ověřte parametry zpracování dat dle účtu poskytovatele.
+
+### Nastavení Google Gemini
+
+1. Získejte Gemini API klíč v [Google AI Studio](https://aistudio.google.com/apikey).
+2. Na WEDOSu do neveřejného souboru `.env` nastavte:
+
+   ```ini
+   GEMINI_API_KEY=VAS_API_KLIC
+   GEMINI_VISION_MODEL=gemini-3.5-flash-lite
+   ```
+
+3. Položky `OPENAI_API_KEY` a `OPENAI_VISION_MODEL` můžete z `.env` odstranit: po této změně už je aplikace nepoužívá.
+4. V aplikaci otevřete **Odečty → Vyfotit měřidlo**. Server pošle fotografii přes HTTPS službě Google Gemini. Návrh zkontrolujte a až poté potvrďte. Při nedostupnosti služby lze odečet zadat ručně.
+
+Klíč nikdy nevkládejte do JavaScriptu ani do Git repozitáře. Model můžete změnit přes `GEMINI_VISION_MODEL` (musí podporovat obrazový vstup i JSON výstup). Výchozí model je `gemini-3.5-flash-lite`; nabídka modelů, limity a ceny se mohou měnit. Tato úprava **nevyžaduje databázovou migraci** a historické fotografie ani odečty nemění.
 
 ## GitHub vydání a aktualizace
 
@@ -122,7 +137,7 @@ Kořenový `.htaccess` bezpečně směruje `/` a `/index.php` do `public/index.p
 
 **Aktualizace:** po nastavení `GITHUB_REPOSITORY` může administrátor použít stránku **Aktualizace**; nasazení musí obsahovat GitHub Release asset `evidence-energii-vX.Y.Z.zip` a soubor `.sha256`, jaké vytváří `.github/workflows/release.yml`. Instalátor s tokenem není potřebný pro běžné GitHub aktualizace, protože updater spouští migrace automaticky. Když se aktualizace nevejde do časového limitu PHP nebo nepůjde přepisovat FTP soubory, nasaďte release balíček ručně přes FTP a použijte dočasný nový `INSTALL_TOKEN` pro jednorázové provedení migrací. Po nasazení jej opět odeberte.
 
-**Bezpečnostní poznámka:** PHP 7.3 je výrobcem mimo bezpečnostní podporu. Pokud je to možné, vyberte na WEDOSu podporovanou verzi PHP; patch je kompatibilní také s PHP 8.x. AI odečty vyžadují internetový přístup na `api.openai.com` a funkční cURL/SSL.
+**Bezpečnostní poznámka:** PHP 7.3 je výrobcem mimo bezpečnostní podporu. Pokud je to možné, vyberte na WEDOSu podporovanou verzi PHP; patch je kompatibilní také s PHP 8.x. AI odečty vyžadují internetový přístup na `generativelanguage.googleapis.com` a funkční cURL/SSL.
 
 
 ### Již provedené migrace po aktualizaci (od opravy v0.1.5)
