@@ -120,7 +120,7 @@ final class Consumption {
      * @param array $seriesByDevice Odečty indexované podle device_id.
      * @return array|null Null při neúplných podkladech, nikdy částečný součet.
      */
-    public static function deviceUsage(array $devices,array $seriesByDevice,string $start,string $end): ?array {
+    public static function deviceUsage(array $devices,array $seriesByDevice,string $start,string $end, bool $includeLowTariff = false): ?array {
         self::dayNumber($start);self::dayNumber($end);
         if($start >= $end) throw new RuntimeException('Chybné období.');
         $total=0.0;$estimated=false;$count=0;$firstMethod=null;$lastMethod=null;$warnings=[];
@@ -149,6 +149,48 @@ final class Consumption {
                 $warnings[]='Odhad přesahuje dostupné odečty zařízení #'.$device['id'].' (max. 45 dní).';
             if(($a['span']>92 && $a['method']!=='actual') || ($b['span']>92 && $b['method']!=='actual'))
                 $warnings[]='Odhad ze vzdálených odečtů zařízení #'.$device['id'].' (více než 92 dní).';
+
+            if ($includeLowTariff) {
+                $lowDates = [];
+                foreach ($seriesByDevice[(int) $device['id']] ?? [] as $reading) {
+                    if (($reading['value_low'] ?? null) !== null) {
+                        $lowDates[(string) $reading['reading_date']] = [
+                            'reading_date' => (string) $reading['reading_date'],
+                            'value' => $reading['value_low'],
+                        ];
+                    }
+                }
+                if (($device['opening_value_low'] ?? null) !== null) {
+                    $lowDates[$installed] = ['reading_date' => $installed, 'value' => $device['opening_value_low']];
+                }
+                if ($removed !== null && ($device['closing_value_low'] ?? null) !== null) {
+                    $lowDates[(string) $removed] = ['reading_date' => (string) $removed, 'value' => $device['closing_value_low']];
+                }
+                if ($lowDates) {
+                    ksort($lowDates, SORT_STRING);
+                    $firstLowDate = (string) key($lowDates);
+                    if ($firstLowDate < $bDate) {
+                        // NT starts during the requested period: never report a partial total.
+                        if ($firstLowDate > $aDate) {
+                            return null;
+                        }
+                        $lowObservations = array_values($lowDates);
+                        $lowA = self::boundary($lowObservations, $aDate);
+                        $lowB = self::boundary($lowObservations, $bDate);
+                        if (!$lowA || !$lowB || $lowB['value'] + 0.00001 < $lowA['value']) {
+                            return null;
+                        }
+                        $total += $lowB['value'] - $lowA['value'];
+                        $estimated = $estimated || $lowA['method'] !== 'actual' || $lowB['method'] !== 'actual';
+                        if ($lowA['method'] === 'projected' || $lowB['method'] === 'projected') {
+                            $warnings[] = 'Nízký tarif: extrapolace zařízení #'.$device['id'].'.';
+                        }
+                        if (($lowA['span'] > 92 && $lowA['method'] !== 'actual') || ($lowB['span'] > 92 && $lowB['method'] !== 'actual')) {
+                            $warnings[] = 'Nízký tarif: vzdálené odečty zařízení #'.$device['id'].'.';
+                        }
+                    }
+                }
+            }
         }
         if($count===0) return null;
         return ['value'=>round($total,4),'estimated'=>$estimated,'from'=>$firstMethod,'to'=>$lastMethod,
@@ -162,7 +204,7 @@ final class Consumption {
         foreach ($db->query('SELECT * FROM meter_devices ORDER BY meter_id,installed_on,id')->fetchAll(PDO::FETCH_ASSOC) as $row)
             $devices[(int)$row['meter_id']][]=$row;
         $series=[];
-        foreach ($db->query('SELECT device_id,reading_date,value FROM meter_readings ORDER BY device_id,reading_date')->fetchAll(PDO::FETCH_ASSOC) as $row)
+        foreach ($db->query('SELECT device_id,reading_date,value,value_low FROM meter_readings ORDER BY device_id,reading_date')->fetchAll(PDO::FETCH_ASSOC) as $row)
             $series[(int)$row['device_id']][]=$row;
         $coefficients=[];
         foreach ($db->query('SELECT meter_id,effective_from,coefficient FROM meter_coefficients ORDER BY meter_id,effective_from')->fetchAll(PDO::FETCH_ASSOC) as $row)
@@ -176,7 +218,7 @@ final class Consumption {
         $readings=[]; $coefs=[]; $warnings=[]; $estimated=[]; $details=[];
         foreach ($data['meters'] as $meter) {
             $id=(int)$meter['id'];
-            $usage=self::deviceUsage($data['devices'][$id]??[],$data['series'],$start,$end);
+            $usage=self::deviceUsage($data['devices'][$id]??[],$data['series'],$start,$end,$meter['type']==='electricity');
             if($usage===null) continue;
             $changes=$data['coefficients'][$id]??[];
             $current=1.0; $changed=false;

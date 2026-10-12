@@ -14,4 +14,10 @@ foreach($candidates as $meter) {
     $meterChoices[(int)$meter['id']]=meter_option_label($meter,$labels);
     if((int)$meter['id']===$selectedMeterId) $reviewUnit=$labels[$meter['type']]??$reviewUnit;
 }
-return compact('p','identity','meterChoices','selectedMeterId','reviewUnit');
+$electricMeterIds = [];
+foreach ($candidates as $candidate) {
+    if ($candidate['type'] === 'electricity') {
+        $electricMeterIds[] = (int) $candidate['id'];
+    }
+}
+return compact('p','identity','meterChoices','selectedMeterId','reviewUnit','electricMeterIds');

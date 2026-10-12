@@ -93,7 +93,8 @@ if($action==='meter_replace') {
     Energy\MeterRegistry::replace(db(),$id,(string)($_POST['replacement_date']??''),
         (string)($_POST['old_final']??''),(string)($_POST['new_initial']??''),
         (string)($_POST['new_serial']??''),(string)($_POST['note']??''),
-        (string)($_POST['new_ean']??''));
+        (string)($_POST['new_ean']??''),
+        (string)($_POST['old_final_low']??''),(string)($_POST['new_initial_low']??''));
     audit((int)$u['id'],'meter_replace','měřicí místo='.$id.' datum='.(string)$_POST['replacement_date']);
     redirect('meters','Výměna zařízení uložena. Staré odečty zůstávají zachované.');
 }

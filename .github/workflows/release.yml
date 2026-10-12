@@ -47,6 +47,8 @@ jobs:
           php tests/migration_004_identity.php
           php tests/migrations.php
           php tests/meter_devices.php
+          php tests/electricity_tariffs.php
+          php tests/migration_005_tariffs.php
           php tests/migration_003_recovery.php
           php tests/module_structure.php
           php tests/templates.php

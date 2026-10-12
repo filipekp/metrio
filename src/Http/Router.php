@@ -47,10 +47,12 @@ function metrio_dispatch(): void {
         try {
             $mid=(int)($_GET['meter_id']??0);
             $day=valid_day((string)($_GET['date']??''));
-            meter_for_reading($mid,$u);
+            $meter = meter_for_reading($mid, $u);
             $device=Energy\MeterRegistry::deviceOn(db(),$mid,$day);
             if(!$device) throw new RuntimeException('K tomuto datu není zařízení instalováno.');
             $limits=Energy\MeterRegistry::bounds(db(),$device,$day);
+            $limits['electricity'] = $meter['type'] === 'electricity';
+            $limits['low'] = $limits['electricity'] ? Energy\MeterRegistry::bounds(db(), $device, $day, true) : null;
             $limits['installation_day']=$device['opening_value']!==null && $day===$device['installed_on'];
             $limits['duplicate']=(bool)one('SELECT id FROM meter_readings WHERE device_id=? AND reading_date=?',[(int)$device['id'],$day]);
             echo json_encode(['ok'=>true,'limits'=>$limits],JSON_UNESCAPED_UNICODE);

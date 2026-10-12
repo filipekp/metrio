@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 // Zpracování akcí modulu Readings. Oprávnění jsou kontrolována uvnitř akcí.
 if($action==='reading_add') {
-    save_reading($u,(int)($_POST['meter_id']??0),(string)($_POST['reading_date']??''),(string)($_POST['value']??''));
+    save_reading($u, (int) ($_POST['meter_id'] ?? 0), (string) ($_POST['reading_date'] ?? ''), (string) ($_POST['value'] ?? ''), 'manual', null, (string) ($_POST['value_low'] ?? ''));
     redirect('readings','Odečet uložen.');
 }
 
@@ -51,7 +51,7 @@ if($action==='photo_confirm') {
     db()->beginTransaction();
     try {
         sql("UPDATE reading_photos SET meter_id=? WHERE id=? AND status='pending' AND user_id=?",[$chosen,$photo['id'],$photo['user_id']]);
-        save_reading($u,$chosen,(string)($_POST['reading_date']??''),(string)($_POST['value']??''),'photo',(int)$photo['id']);
+        save_reading($u, $chosen, (string) ($_POST['reading_date'] ?? ''), (string) ($_POST['value'] ?? ''), 'photo', (int) $photo['id'], (string) ($_POST['value_low'] ?? ''));
         sql("UPDATE reading_photos SET status='confirmed' WHERE id=? AND status='pending'",[$photo['id']]);
         audit((int)$u['id'],'photo_identity_confirm','foto='.$photo['id'].' původní='.($photo['original_meter_id']??$photo['meter_id']).' potvrzené='.$chosen.' status='.$identity['status'].' ručně='.(!$safe?'ano':'ne'));
         db()->commit();
