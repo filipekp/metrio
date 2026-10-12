@@ -3,8 +3,8 @@ Options -Indexes
 <IfModule mod_rewrite.c>
 RewriteEngine On
 # Server-side data and project files must never be served directly.
-RewriteRule ^(?:src|bin|migrations|storage|tests|\.git|\.github)(?:/|$) - [F,L,NC]
-RewriteRule ^(?:\.env(?:\..*)?|\.gitignore|\.htaccess|VERSION|README\.md|Dockerfile|compose\.yaml|composer\.(?:json|lock)|.*\.(?:sql|patch|bak|log))$ - [F,L,NC]
+RewriteRule ^(?:src|bin|migrations|storage|templates|tests|\.git|\.github)(?:/|$) - [F,L,NC]
+RewriteRule ^(?:\.env(?:\..*)?|\.gitignore|\.htaccess|VERSION|README\.md|ARCHITECTURE\.md|Dockerfile|compose\.yaml|composer\.(?:json|lock)|.*\.(?:sql|patch|bak|log))$ - [F,L,NC]
 # Public assets and two explicit PHP entry points.
 RewriteRule ^assets/(.*)$ public/assets/$1 [L]
 RewriteRule ^install\.php$ public/install.php [L]

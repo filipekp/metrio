@@ -148,3 +148,8 @@ Rozhraní používá lokálně uložený Bootstrap 5.3.6 (`public/assets/vendor/
 - Všechny dosavadní akce, formuláře a databázové migrace jsou zachované; pro redesign není potřeba migrace databáze.
 
 Kontrola po instalaci: `php tests/php73_compatibility.php` (v GitHub Actions se vykoná pod PHP 7.3).
+
+
+## Uspořádání projektu
+
+Nová modulární struktura projektu je popsaná v [ARCHITECTURE.md](ARCHITECTURE.md). HTTP routy, controllery a POST akce jsou v `src/Http` a `src/Modules`, jednotlivé HTML šablony v `templates/pages`. Podrobnosti v dokumentaci.

@@ -80,7 +80,7 @@ final class Updater {
             if($apiDigest!=='' && !hash_equals('sha256:'.$digest,$apiDigest)) throw new RuntimeException('GitHub digest nesouhlasí.');
             $zip=new ZipArchive(); if($zip->open($zipPath)!==true) throw new RuntimeException('Neplatný ZIP.');
             try { $this->extractSafe($zip,$stage); } finally { $zip->close(); }
-            foreach(['public/index.php','src/bootstrap.php','migrations/001_initial.sql','bin/migrate.php','VERSION'] as $required)
+            foreach(['public/index.php','src/bootstrap.php','migrations/001_initial.sql','templates/pages/dashboard.php','src/Http/Router.php','bin/migrate.php','VERSION'] as $required)
                 if(!is_file($stage.'/'.$required)) throw new RuntimeException('Balíčku chybí soubor '.$required);
             if(trim((string)file_get_contents($stage.'/VERSION'))!==$release['tag']) throw new RuntimeException('VERSION neodpovídá tagu.');
             // Migracni runner nacteme ze stavajici aplikace jeste pred
@@ -89,7 +89,7 @@ final class Updater {
             // aktualizace kompatibilni s uz provedenymi migracemi.
             $migrationRunner=new Migrations(\db(),$this->root.'/migrations');
             // Neprovádíme synchronizační mazání: konfigurace a nahrané fotografie zůstávají netknuté.
-            $paths=['public','src','migrations','bin','VERSION','README.md','.env.example','.htaccess'];
+            $paths=['public','src','templates','migrations','bin','VERSION','README.md','ARCHITECTURE.md','.env.example','.htaccess'];
             foreach($paths as $path) {
                 if(is_dir($stage.'/'.$path)) {
                     foreach(new RecursiveIteratorIterator(new RecursiveDirectoryIterator($stage.'/'.$path,FilesystemIterator::SKIP_DOTS)) as $file) {
@@ -132,7 +132,7 @@ final class Updater {
             if($total>100*1024*1024 || $size>20*1024*1024) throw new RuntimeException('Balíček je příliš velký.');
             if(strpos($path,'\\') !== false || strpos($path,'..') !== false || strpos($path,'/') === 0 || strpos($path,':') !== false || strpos($path,"\0") !== false)
                 throw new RuntimeException('Nebezpečná cesta v ZIP.');
-            if(!preg_match('~^(?:public/|src/|migrations/|bin/|VERSION$|README\.md$|\.env\.example$|\.htaccess$)~D',$path))
+            if(!preg_match('~^(?:public/|src/|templates/|migrations/|bin/|VERSION$|README\.md$|ARCHITECTURE\.md$|\.env\.example$|\.htaccess$)~D',$path))
                 throw new RuntimeException('Neočekávaný soubor balíčku: '.$path);
             $opsys=0;$attributes=0;
             if($zip->getExternalAttributesIndex($i,$opsys,$attributes)) {

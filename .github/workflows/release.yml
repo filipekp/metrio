@@ -37,12 +37,14 @@ jobs:
         run: |
           set -euo pipefail
           php -v
-          find src bin public tests -type f -name '*.php' -print0 | xargs -0 -n1 php -l
+          find src bin public templates tests -type f -name '*.php' -print0 | xargs -0 -n1 php -l
           php tests/consumption.php
           php tests/consumption_periods.php
           php tests/permissions.php
           php tests/php73_compatibility.php
           php tests/migrations.php
+          php tests/module_structure.php
+          php tests/templates.php
           bash .github/scripts/test-release-notes.sh
 
       - name: Determine release version
@@ -86,12 +88,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist staging
-          cp -a src bin public migrations staging/
-          cp README.md .env.example .htaccess staging/
+          cp -a src bin public migrations templates staging/
+          cp README.md ARCHITECTURE.md .env.example .htaccess staging/
           printf '%s\n' "$TAG" > staging/VERSION
           (
             cd staging
-            zip -qr "../dist/evidence-energii-${TAG}.zip" src bin public migrations README.md .env.example .htaccess VERSION
+            zip -qr "../dist/evidence-energii-${TAG}.zip" src bin public migrations templates README.md ARCHITECTURE.md .env.example .htaccess VERSION
           )
           (
             cd dist
