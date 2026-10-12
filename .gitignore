@@ -1,0 +1,10 @@
+.env
+/storage/*
+!/storage/.gitignore
+!/storage/photos/
+!/storage/photos/.gitkeep
+!/storage/deploy-backups/
+!/storage/deploy-backups/.gitkeep
+/vendor/
+/.idea/
+/.DS_Store
