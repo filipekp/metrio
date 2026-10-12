@@ -155,6 +155,10 @@ function form_select(string $name,array $options,mixed $selected=null,bool $opti
 }
 function unit_options(array $units): array { $v=[];foreach($units as $x) $v[$x['id']]=$x['building_name'].' / '.$x['name'];return $v; }
 function energy_labels(): array { return ['electricity'=>'Elektřina (kWh)','gas'=>'Plyn (m³)','cold_water'=>'Studená voda (m³)','hot_water'=>'Teplá voda (m³)','wastewater'=>'Odpadní voda (m³)']; }
+function unit_kind_label(string $value): string { return ['apartment'=>'Byt','common'=>'Společné prostory'][$value]??'Neznámý typ'; }
+function wastewater_mode_label(string $value): string { return ['none'=>'Bez automatického výpočtu','sum_water'=>'Studená + teplá voda','metered'=>'Vlastní měřidlo'][$value]??'Neznámý režim'; }
+function reading_source_label(string $value): string { return ['manual'=>'Ručně','photo'=>'Z fotografie'][$value]??'Neznámý zdroj'; }
+function photo_status_label(string $value): string { return ['pending'=>'Čeká na ověření','confirmed'=>'Potvrzeno','rejected'=>'Zamítnuto'][$value]??'Neznámý stav'; }
 function fmt(float $n): string { return number_format($n, 3, ',', ' '); }
 
 function csv_cell(string $value): string {

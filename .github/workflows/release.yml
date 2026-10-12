@@ -17,6 +17,8 @@ jobs:
           set -euo pipefail
           find src bin public tests -type f -name '*.php' -print0 | xargs -0 -n1 php -l
           php tests/consumption.php
+          php tests/consumption_periods.php
+          php tests/permissions.php
       - name: Create versioned package and SHA256
         env:
           TAG: ${{ github.ref_name }}

@@ -3,3 +3,17 @@
 /* Oprávnění: přehledné přiřazení + odebrání jednotky. */
 .access-entry{display:flex!important;align-items:center!important;gap:8px!important;margin:0 0 7px 0!important;flex-wrap:wrap!important}
 .access-entry span{font-weight:500}
+
+/* Spotřeby: přehledný měsíční graf i na úzkém mobilním displeji. */
+.consumption-chart{display:flex;gap:12px;overflow-x:auto;align-items:flex-end;padding:14px 3px 4px;min-height:244px;border-bottom:1px solid #d9e2ee}
+.chart-column{min-width:62px;max-width:110px;flex:1;text-align:center;display:flex;flex-direction:column;gap:5px;align-items:stretch}
+.chart-value{min-height:23px;font-size:.75rem;white-space:nowrap;color:#34516b;font-variant-numeric:tabular-nums}
+.chart-value sup{color:#9b6500;font-weight:800}
+.chart-bar-area{height:168px;display:flex;align-items:flex-end;justify-content:center;background:linear-gradient(to top,#f1f5f9 1px,transparent 1px);background-size:100% 42px}
+.chart-bar{width:70%;max-width:58px;min-height:3px;border-radius:5px 5px 0 0;background:#23699f}
+.chart-bar.estimated{background:repeating-linear-gradient(45deg,#5396c0,#5396c0 7px,#83bbda 7px,#83bbda 14px)}
+.chart-bar.negative{background:#ad4242}
+.chart-label{padding-bottom:6px;font-weight:600;font-size:.76rem;color:#44627d}
+.estimate-pill,.actual-pill{font-size:.8rem;font-weight:650;border-radius:6px;padding:3px 8px;white-space:nowrap}
+.estimate-pill{background:#fff0cc;color:#7b540a}
+.actual-pill{background:#e4f1e8;color:#266d42}

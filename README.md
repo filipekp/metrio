@@ -1,6 +1,6 @@
 # Evidence energií – PHP + MariaDB
 
-První funkční verze systému pro evidenci elektřiny, plynu, studené vody, teplé vody a odpadní vody. Správa více objektů a bytových jednotek, role `admin`/`user`, hierarchie hlavních a podružných měřidel, historické koeficienty, odečty, výpočty, fotografie s volitelným AI návrhem a správa GitHub Releases.
+První funkční verze systému pro evidenci elektřiny, plynu, studené vody, teplé vody a odpadní vody. Správa více objektů a bytových jednotek, role `admin` / `manager` / `user`, hierarchie hlavních a podružných měřidel, historické koeficienty, odečty, výpočty, fotografie s volitelným AI návrhem a správa GitHub Releases.
 
 ## Požadavky
 
@@ -38,14 +38,24 @@ Před nahráváním fotografií případně opravte oprávnění složky `storag
 - **Jednotky**: založte Byt 1, Byt 2, společné prostory. Určete režim odpadní vody: vlastní měřidlo, součet studené + teplé vody, nebo žádný automatický výpočet.
 - **Uživatelé**: založte účty a přiřaďte jednotlivým uživatelům práva ke konkrétním jednotkám.
 - **Měřidla**: přidejte hlavní elektroměr jako měřidlo se zbytkovou spotřebou přiřazenou Bytu 1; podružný elektroměr s rodičem nastaveným na hlavní a přiřazený Bytu 2. Koeficient pro podružný elektroměr zadejte např. `1.02`.
-- **Odečty**: u obou měřidel pořiďte počáteční a koncový odečet ke shodným datům. Následně otevřete **Spotřeby**.
-- **Výsledky**: Byt 2 = (nový stav – starý stav) × koeficient. Byt 1 = korigovaná spotřeba hlavního – korigovaná spotřeba podružného. U další úrovně podružného měřidla se počítá vždy rozdíl přímého rodiče a přímých potomků. Přesné výsledky závisejí na odečtech k zadaným hranicím.
+- **Odečty**: u obou měřidel pořiďte více datovaných odečtů. Přesná shoda s hranicí požadovaného období není nutná. Následně otevřete **Spotřeby**.
+- **Výsledky**: Byt 2 = (nový stav – starý stav) × koeficient. Byt 1 = korigovaná spotřeba hlavního – korigovaná spotřeba podružného. U další úrovně podružného měřidla se počítá vždy rozdíl přímého rodiče a přímých potomků. Výsledky mezi odečty a krátce za posledním odečtem jsou vždy označeny jako **odhad**.
 
 Příklad: hlavní 1000 kWh, podružný 400 kWh a koeficient 1,02 => Byt 2 = 408 kWh, Byt 1 = 592 kWh.
 
 **Poznámka ke koeficientům:** při změně uprostřed měsíce je nutný mezilehlý odečet a výpočet po úsecích. Současná verze na takové období upozorní, nepřiděluje automaticky odhady. Pokud jste měřidlo vyměnili a nové má nižší číselník, založte nové měřidlo.
 
 **Poznámka k odpadní vodě:** režim SV+TV používejte výhradně tehdy, když SV a TV představují oddělené objemy vody. Pokud studená voda již zahrnuje vodu před ohřevem, vedlo by sčítání k dvojímu započtení.
+
+## Spotřeby mimo přesné termíny odečtů a grafy
+
+Stránka **Spotřeby** nyní umožňuje vybrat jednotku, libovolné období „od – do“ a samostatný graf pro každou evidovanou energii. Spotřeba se zobrazuje také jako souhrn a tabulka dílčích období; export CSV rozlišuje skutečné hranice odečtů a odhady. Běžný uživatel vidí jen své jednotky.
+
+Pokud požadované datum neleží přímo na odečtu, program spočte **lineární interpolaci** mezi dvěma nejbližšími odečty (rovnoměrná spotřeba v čase). Pokud požadované datum překračuje první nebo poslední známý odečet, dovolí **extrapolaci maximálně o 45 dnů** z nejbližších dvou odečtů. Pro větší odchylku, pouze jeden odečet nebo zápornou vypočtenou hodnotu neposkytne výsledek. Všechna čísla, která nejsou založena na přesných hraničních odečtech, jsou označena jako **Odhad** včetně grafů a CSV. Interpolace mezi velmi vzdálenými odečty je též nejistá; administrátor uvidí varování nad 92 dnů. Odhad není vhodné považovat za definitivní podklad pro finanční vyúčtování bez kontroly.
+
+Při změně koeficientu uvnitř období se dotčené měřidlo **nevypočítá**. Je potřeba období rozdělit a mít mezilehlý odečet. Pro výměnu číselníku založte nové měřidlo. Částky ani nezměnitelné uzávěrky nejsou součástí této verze.
+
+**Hodnoty v MariaDB zůstávají v původních technických kódech** (`manual`, `apartment` atd.) kvůli kompatibilitě. V rozhraní jsou přeloženy do češtiny. Tento patch nevyžaduje žádnou databázovou migraci.
 
 ## Kamera / AI návrh odečtu
 
@@ -73,8 +83,8 @@ Pro instalace z nepublikovaného/private repozitáře je nutné doplnit bezpečn
 ## Bezpečnost a limity MVP
 
 - Přihlášení používá `password_hash`, session cookies HttpOnly/SameSite, formuláře mají CSRF a SQL používá PDO prepared statements.
-- Uživateli se zobrazují jen měřidla, která přímo přiřazujeme jeho jednotce a nemají podružné měřidlo. Přesto se v přehledu spotřeby zobrazí vypočítaná spotřeba jeho jednotky. Uživatel nemá přístup k odečtům nadřazených měřidel ani měřidlům sousedů.
-- Administrátor spravuje všechny objekty, uživatele, měřidla i koeficienty.
+- Uživateli se zobrazují měřidla přiřazená jeho jednotce (i hlavní měřidlo s podružnými). Současně vidí pouze své vypočtené spotřeby a nikoli odečty sousedních jednotek. Správce objektu vidí všechna měřidla a odečty objektů, které mu administrátor přidělil.
+- Administrátor spravuje všechny objekty, uživatele, měřidla i koeficienty. Může přidávat a odebírat uživatelům přístup k jednotkám i správcům přístup k objektům.
 - Je nutné provozní HTTPS, nastavit zálohování souborů i databáze, limity požadavků u reverzní proxy a hlídání diskového prostoru. Serverové upload limity `upload_max_filesize` / `post_max_size` musí umožnit fotografie do 5 MB.
 - Databázové výpočty jsou v aktuální verzi **on demand**, bez účetních uzávěrek a nezměnitelných fakturačních snapshotů. Nejsou implementovány peněžní tarify, schvalování odečtů, automatické mazání fotografií ani automatické dělení koeficientů při změně v průběhu období.
 - Větší provoz si zaslouží obsluhu chyb ze serverových logů, automatizované zálohy, integrační testy proti skutečné MariaDB a případně background frontu na delší OCR požadavky.
@@ -83,7 +93,9 @@ Pro instalace z nepublikovaného/private repozitáře je nutné doplnit bezpečn
 
 ```bash
 php tests/consumption.php
+php tests/consumption_periods.php
+php tests/permissions.php
 find src bin public tests -type f -name '*.php' -exec php -l {} \;
 ```
 
-Připravená testovací sada ověřuje jednoduché odečtení, koeficient, víceúrovňová měřidla, záporný zbytek a chybějící odečet. Integrační testy MariaDB vyžadují běžící DB a nejsou zahrnuty do této samostatné distribuce.
+Připravená testovací sada ověřuje poměrné odhady, odhady s omezením do 45 dnů, kalendářní dny, jednoduché odečtení, koeficient, víceúrovňová měřidla, záporný zbytek a chybějící odečet. Integrační testy MariaDB vyžadují běžící DB a nejsou zahrnuty do této samostatné distribuce.
