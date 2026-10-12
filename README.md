@@ -190,3 +190,42 @@ Výběry se zobrazují jako `Objekt / Energie / Měřidlo — jednotka: …` (po
 - Nová migrace `003_meter_devices.sql` zpětně přiřadí všechny dosavadní odečty k prvnímu zařízení beze změny původních naměřených hodnot. Před nasazením zazálohujte databázi.
 
 Ověření samotné migrace proti reálnému MariaDB serveru je potřebné před produkčním nasazením. Výpočty otestujete pomocí `php tests/meter_devices.php`.
+
+
+## Oprava přerušené migrace 003_meter_devices.sql (MariaDB errno 150)
+
+Ve starší verzi migrace 003 se odstraňoval index `unique_meter_day`, který
+současně podporuje existující cizí klíč `meter_readings.meter_id`. MariaDB
+proto mohla odmítnout poslední `ALTER TABLE` chybou **1025 / errno 150**.
+Předchozí kroky migrace však již mohly vytvořit `meter_devices`, naplnit ji
+zařízeními a přidat sloupec `meter_readings.device_id`.
+
+**Před dalším pokusem vytvořte úplnou zálohu databáze.** Nepoužívejte
+`DROP TABLE`, nemažte staré odečty ani nemanipulujte ručně se
+`schema_migrations` a nespouštějte starou SQL migraci znovu.
+
+Opravená migrace 003:
+
+- Zachová již založená zařízení a nevkládá duplicitní výchozí zařízení.
+- Přidá `device_id` jen v případě, že dosud neexistuje, a doplní pouze
+  řádky s `device_id IS NULL`.
+- **Nejprve přidá index na `meter_readings(meter_id)`**, teprve poté
+  odstraní `unique_meter_day` a založí indexy dle `device_id`.
+- Používá MariaDB `IF [NOT] EXISTS` pro bezpečný opakovaný pokus po
+  přerušeném DDL. Na WEDOSu lze opět použít administrační Aktualizace,
+  které nasadí balíček s opravenou verzí migrace.
+
+Kontrola stavu v phpMyAdmin před/po opravě (bez změny dat):
+
+```sql
+SHOW CREATE TABLE meter_readings;
+SHOW CREATE TABLE meter_devices;
+SELECT COUNT(*) AS celkem, SUM(device_id IS NULL) AS bez_zarizeni FROM meter_readings;
+SELECT filename, applied_at FROM schema_migrations WHERE filename='003_meter_devices.sql';
+```
+
+Pokud například `meter_readings` nebo `meter_devices` neexistuje, má
+nečekanou strukturu nebo příkaz selže jinou chybou, dále migraci nezkoušejte
+a nejdříve ověřte databázi a zálohu. Jestliže už někde migrace 003
+úspěšně proběhla, systém její SQL znovu nespouští; novou podobu souboru
+pouze označí jako změněnou (`CHANGED`) pro diagnostiku.
