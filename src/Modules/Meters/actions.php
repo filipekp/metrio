@@ -9,10 +9,14 @@ if($action==='meter_create') {
     if($unit && !one('SELECT 1 FROM units WHERE id=? AND building_id=?',[$unit,$building])) throw new RuntimeException('Jednotka musí být ve stejném objektu.');
     if($parent && !one('SELECT 1 FROM meters WHERE id=? AND building_id=? AND type=?',[$parent,$building,$type])) throw new RuntimeException('Nadřazené měřidlo musí být v témže objektu a stejného druhu.');
     $coef=valid_factor((string)($_POST['coefficient']??'1'));
+    $ean=Energy\MeterIdentity::validatedEan((string)($_POST['ean']??''));
     db()->beginTransaction();
     try {
         sql('INSERT INTO meters(building_id,unit_id,parent_id,type,name,serial,location) VALUES (?,?,?,?,?,?,?)',[$building,$unit?:null,$parent?:null,$type,$name,trim((string)($_POST['serial']??'')),trim((string)($_POST['location']??''))]);
-        $mid=(int)db()->lastInsertId();sql('INSERT INTO meter_coefficients(meter_id,effective_from,coefficient) VALUES(?,?,?)',[$mid,'1900-01-01',$coef]);
+        $mid=(int)db()->lastInsertId();
+        Energy\MeterIdentity::ensureUniqueEan(db(),$ean);
+        sql('INSERT INTO meter_devices(meter_id,serial,ean,installed_on) VALUES(?,?,?,?)',[$mid,trim((string)($_POST['serial']??'')),$ean,'1900-01-01']);
+        sql('INSERT INTO meter_coefficients(meter_id,effective_from,coefficient) VALUES(?,?,?)',[$mid,'1900-01-01',$coef]);
         db()->commit();
     } catch(Throwable $e) {db()->rollBack();throw $e;}
     audit((int)$u['id'],'meter_create',$name);redirect('meters','Měřidlo přidáno.');
@@ -41,6 +45,7 @@ if($action==='meter_update') {
     $building=(int)($_POST['building_id']??0);$unit=(int)($_POST['unit_id']??0);$parent=(int)($_POST['parent_id']??0);
     $type=(string)($_POST['type']??'');$name=trim((string)($_POST['name']??''));
     $serial=trim((string)($_POST['serial']??''));$location=trim((string)($_POST['location']??''));
+    $ean=Energy\MeterIdentity::validatedEan((string)($_POST['ean']??''));
     if($name==='' || strlen($name)>160 || strlen($serial)>160 || strlen($location)>255)
         throw new RuntimeException('Neplatný název nebo příliš dlouhé údaje měřidla.');
     if(!isset(energy_labels()[$type]) || !one('SELECT id FROM buildings WHERE id=?',[$building]))
@@ -69,10 +74,14 @@ if($action==='meter_update') {
         throw new RuntimeException('Nové výrobní číslo fyzického přístroje evidujte funkcí Výměna měřidla.');
     db()->beginTransaction();
     try {
+        $device=one('SELECT id FROM meter_devices WHERE meter_id=? AND removed_on IS NULL ORDER BY id DESC LIMIT 1',[$id]);
+        if(!$device) throw new RuntimeException('Měřidlo nemá aktuální fyzické zařízení.');
+        Energy\MeterIdentity::ensureUniqueEan(db(),$ean,(int)$device['id']);
         sql('UPDATE meters SET building_id=?,unit_id=?,parent_id=?,type=?,name=?,serial=?,location=? WHERE id=?',
             [$building,$unit?:null,$parent?:null,$type,$name,$serial,$location,$id]);
+        sql('UPDATE meter_devices SET ean=? WHERE id=?',[$ean,(int)$device['id']]);
         if($serial!==(string)$m['serial'])
-            sql('UPDATE meter_devices SET serial=? WHERE meter_id=? AND removed_on IS NULL',[$serial,$id]);
+            sql('UPDATE meter_devices SET serial=? WHERE id=?',[$serial,(int)$device['id']]);
         db()->commit();
     } catch(Throwable $e) {db()->rollBack();throw $e;}
     audit((int)$u['id'],'meter_update','měřidlo='.$id);redirect('meters','Údaje měřidla uloženy.');
@@ -83,7 +92,8 @@ if($action==='meter_replace') {
     $id=(int)($_POST['meter_id']??0);
     Energy\MeterRegistry::replace(db(),$id,(string)($_POST['replacement_date']??''),
         (string)($_POST['old_final']??''),(string)($_POST['new_initial']??''),
-        (string)($_POST['new_serial']??''),(string)($_POST['note']??''));
+        (string)($_POST['new_serial']??''),(string)($_POST['note']??''),
+        (string)($_POST['new_ean']??''));
     audit((int)$u['id'],'meter_replace','měřicí místo='.$id.' datum='.(string)$_POST['replacement_date']);
     redirect('meters','Výměna zařízení uložena. Staré odečty zůstávají zachované.');
 }

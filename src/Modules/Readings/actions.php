@@ -23,7 +23,11 @@ if($action==='photo_upload') {
     try { $proposal=Energy\Vision::propose($target,$mime,$labels[$meter['type']]??''); }
     catch(Throwable $e) { error_log('AI OCR: '.$e->getMessage());$proposal=['value'=>null,'note'=>'AI zpracování se nezdařilo. Opište stav ručně.']; }
     try {
-        sql('INSERT INTO reading_photos(meter_id,user_id,storage_name,mime,suggested_value,suggestion_note) VALUES(?,?,?,?,?,?)',[$mid,$u['id'],$storage,$mime,$proposal['value'],$proposal['note']]);
+        $identity=Energy\MeterIdentity::assess($mid,$proposal['serial']??null,$proposal['ean']??null,
+            Energy\MeterIdentity::candidates(db(),meter_scope($u)));
+        sql('INSERT INTO reading_photos(meter_id,user_id,storage_name,mime,suggested_value,suggestion_note,detected_serial,detected_ean,identity_status,suggested_meter_id,original_meter_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+            [$mid,$u['id'],$storage,$mime,$proposal['value'],$proposal['note'],
+             $proposal['serial']??null,$proposal['ean']??null,$identity['status'],$identity['suggested_meter_id'],$mid]);
         $pid=(int)db()->lastInsertId();
     } catch(Throwable $e) { @unlink($target);throw $e; }
     audit((int)$u['id'],'photo_upload',(string)$pid);
@@ -33,10 +37,23 @@ if($action==='photo_upload') {
 if($action==='photo_confirm') {
     $photo=photo_for((int)($_POST['photo_id']??0),$u);
     if($photo['status']!=='pending') throw new RuntimeException('Fotografie již byla vyřízena.');
+    $chosen=(int)($_POST['confirmed_meter_id']??0);
+    $candidates=Energy\MeterIdentity::candidates(db(),meter_scope($u));
+    $identity=Energy\MeterIdentity::assess((int)($photo['original_meter_id']??$photo['meter_id']),
+        $photo['detected_serial'],$photo['detected_ean'],$candidates);
+    $suggested=$identity['suggested_meter_id'];
+    $safe=($identity['status']==='match' && $chosen===(int)($photo['original_meter_id']??$photo['meter_id']))
+        || ($identity['status']==='other' && $suggested!==null && $chosen===$suggested);
+    if(!$safe && empty($_POST['confirm_identity_override']))
+        throw new RuntimeException('Fotografie neodpovídá ověřenému měřidlu. Vyberte měřidlo podle EAN/výrobního čísla, nebo výslovně potvrďte ruční ověření.');
+    // Oprávnění musí být znovu ověřeno na serveru; hodnotě z formuláře nelze důvěřovat.
+    meter_for_reading($chosen,$u);
     db()->beginTransaction();
     try {
-        save_reading($u,(int)$photo['meter_id'],(string)($_POST['reading_date']??''),(string)($_POST['value']??''),'photo',(int)$photo['id']);
+        sql("UPDATE reading_photos SET meter_id=? WHERE id=? AND status='pending' AND user_id=?",[$chosen,$photo['id'],$photo['user_id']]);
+        save_reading($u,$chosen,(string)($_POST['reading_date']??''),(string)($_POST['value']??''),'photo',(int)$photo['id']);
         sql("UPDATE reading_photos SET status='confirmed' WHERE id=? AND status='pending'",[$photo['id']]);
+        audit((int)$u['id'],'photo_identity_confirm','foto='.$photo['id'].' původní='.($photo['original_meter_id']??$photo['meter_id']).' potvrzené='.$chosen.' status='.$identity['status'].' ručně='.(!$safe?'ano':'ne'));
         db()->commit();
     } catch(Throwable $e) {db()->rollBack();throw $e;}
     redirect('readings','Odečet z fotografie potvrzen a uložen.');

@@ -43,11 +43,12 @@ final class MeterRegistry {
     }
 
     /** Výmena se serializuje přes zamčený záznam měřicího místa. */
-    public static function replace(PDO $db,int $meterId,string $date,string $final,string $start,string $serial,string $note): void {
+    public static function replace(PDO $db,int $meterId,string $date,string $final,string $start,string $serial,string $note,string $ean=''): void {
         $date=\valid_day($date);
         if($date>date('Y-m-d')) throw new RuntimeException('Výměnu lze zapsat nejdříve v den skutečné výměny.');
         $final=\valid_number($final);$start=\valid_number($start);
         $serial=trim($serial);$note=trim($note);
+        $ean=MeterIdentity::validatedEan($ean);
         if($serial==='' || strlen($serial)>160 || strlen($note)>255) throw new RuntimeException('Vyplňte výrobní číslo nového zařízení (max. 160 znaků) a případně poznámku (max. 255 znaků).');
         $db->beginTransaction();
         try {
@@ -68,8 +69,9 @@ final class MeterRegistry {
             if($old['opening_value']!==null && (float)$final<(float)$old['opening_value']) throw new RuntimeException('Konečný stav je nižší než počáteční stav starého zařízení.');
             $stmt=$db->prepare('UPDATE meter_devices SET removed_on=?,closing_value=? WHERE id=? AND removed_on IS NULL');
             $stmt->execute([$date,$final,(int)$old['id']]);
-            $stmt=$db->prepare('INSERT INTO meter_devices(meter_id,serial,installed_on,opening_value,note) VALUES(?,?,?,?,?)');
-            $stmt->execute([$meterId,$serial,$date,$start,$note]);
+            MeterIdentity::ensureUniqueEan($db,$ean);
+            $stmt=$db->prepare('INSERT INTO meter_devices(meter_id,serial,ean,installed_on,opening_value,note) VALUES(?,?,?,?,?,?)');
+            $stmt->execute([$meterId,$serial,$ean,$date,$start,$note]);
             $stmt=$db->prepare('UPDATE meters SET serial=? WHERE id=?');
             $stmt->execute([$serial,$meterId]);
             $db->commit();
