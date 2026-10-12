@@ -37,6 +37,8 @@ function handle_post_request(string $page): void {
             'building_manager_remove' => ['users', 'Users'],
             'unit_user' => ['users', 'Users'],
             'meter_create' => ['meters', 'Meters'],
+            'meter_update' => ['meters', 'Meters'],
+            'meter_replace' => ['meters', 'Meters'],
             'meter_active' => ['meters', 'Meters'],
             'coefficient_add' => ['meters', 'Meters'],
             'reading_add' => ['readings', 'Readings'],

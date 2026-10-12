@@ -73,3 +73,12 @@ v controllerech a POST handleru; skrytí menu samo o sobě přístup nechrání.
 Nové podstránky **nesmějí** generovat `<html>`, `<body>`, sidebar ani layoutové
 `<main>`. V `templates/pages/` je pouze obsah stránky a router zajistí zbytek.
 `php tests/layout.php` kontroluje, že se společné části vykreslí jednou a podle rolí.
+
+
+### Fyzická výměna zařízení
+
+- `meters` = trvalé měřicí místo (objekt, energie, hierarchie, jednotka).
+- `meter_devices` = fyzické instalace s platností a hraničními stavy.
+- `meter_readings.device_id` = jednoznačný číselník konkrétního přístroje.
+- `src/MeterRegistry.php` = výměny, výběr zařízení podle data a validace odečtu.
+- `src/Consumption.php::deviceUsage()` = sčítání dílčích úseků zařízení, nikdy neodečítá číselníky různých přístrojů.

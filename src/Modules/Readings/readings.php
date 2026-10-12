@@ -4,7 +4,7 @@ declare(strict_types=1);
 // Controller: načtení dat a kontrola vstupů před vykreslením šablony.
 $meters=meter_scope($u);
 $mopts=[];
-foreach($meters as $m) if($m['active']) $mopts[$m['id']]=$m['name'].' · '.$labels[$m['type']];
+foreach($meters as $m) if($m['active']) $mopts[$m['id']]=meter_option_label($m,$labels);
 $ids=array_map(static function ($m) { return (int)$m['id']; },$meters);
 $recentReadings=[];
 if ($ids) {

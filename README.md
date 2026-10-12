@@ -175,3 +175,18 @@ Rozložení všech přihlášených obrazovek je ve `templates/layouts/` a `temp
 Pro další stránku stačí přidat modul a `templates/pages/novastranka.php` s vlastním obsahem.
 Navigace a její viditelnost podle rolí se nastavují v `src/View/Layout.php`.
 Přihlášení a webový instalátor používají samostatný layout bez postranního menu.
+
+
+## Editace a výměna měřidla
+
+Na stránce **Měřidla** má administrátor k dispozici **Upravit měřidlo** a **Výměna fyzického měřidla**.
+Výběry se zobrazují jako `Objekt / Energie / Měřidlo — jednotka: …` (pokud má místo přiřazenou jednotku).
+
+- Měřicí místo `meters.id` se při výměně **nemění**. Tabulka `meter_devices` eviduje fyzická zařízení, sériová čísla, intervaly platnosti, jejich počáteční i konečné stavy. Odečty jsou nově svázané s fyzickým zařízením (`meter_readings.device_id`).
+- Při výměně zadejte datum, konečný stav starého zařízení, počáteční stav nového a nové výrobní číslo. Každý úsek se počítá samostatně; pokles číselníku při výměně je povolený, při běžném odečtu ne.
+- Protokol výměny vytváří dva referenční body se **stejným datem**. V daný den se proto další ruční odečet nového zařízení nezapisuje; následující dny normálně ano.
+- Z historických odečtů nelze pouhou editací zpětně přesouvat spotřebu mezi jednotkami ani měnit typ energie či fyzické sériové číslo. Pro fyzickou výměnu použijte samostatný formulář. U nového, dosud nepoužívaného měřidla lze tyto parametry ještě opravit.
+- Běžný odečet lze uložit pouze tehdy, když není **nižší než předchozí** a zároveň není **vyšší než případný pozdější odečet**. Server kontroluje obě hranice a AJAX náhled je pouze pomůcka.
+- Nová migrace `003_meter_devices.sql` zpětně přiřadí všechny dosavadní odečty k prvnímu zařízení beze změny původních naměřených hodnot. Před nasazením zazálohujte databázi.
+
+Ověření samotné migrace proti reálnému MariaDB serveru je potřebné před produkčním nasazením. Výpočty otestujete pomocí `php tests/meter_devices.php`.

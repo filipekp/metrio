@@ -44,6 +44,7 @@ jobs:
           php tests/php73_compatibility.php
           php tests/vision_gemini.php
           php tests/migrations.php
+          php tests/meter_devices.php
           php tests/module_structure.php
           php tests/templates.php
           php tests/layout.php

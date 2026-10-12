@@ -113,17 +113,62 @@ final class Consumption {
         return ['value'=>$value,'method'=>$method,'span'=>$b-$a];
     }
 
+    /**
+     * Spotřeba měřicího místa s výměnami zařízení. Číselníky jednotlivých
+     * fyzických přístrojů nikdy neodečítáme navzájem.
+     * @param array $devices Zařízení patřící jedinému logickému meter_id.
+     * @param array $seriesByDevice Odečty indexované podle device_id.
+     * @return array|null Null při neúplných podkladech, nikdy částečný součet.
+     */
+    public static function deviceUsage(array $devices,array $seriesByDevice,string $start,string $end): ?array {
+        self::dayNumber($start);self::dayNumber($end);
+        if($start >= $end) throw new RuntimeException('Chybné období.');
+        $total=0.0;$estimated=false;$count=0;$firstMethod=null;$lastMethod=null;$warnings=[];
+        usort($devices,static function ($a,$b) {return strcmp($a['installed_on'],$b['installed_on']);});
+        foreach($devices as $device) {
+            $installed=(string)$device['installed_on'];$removed=$device['removed_on'];
+            if($installed >= $end || ($removed!==null && $removed <= $start)) continue;
+            $aDate=max($start,$installed);$bDate=$removed===null?$end:min($end,(string)$removed);
+            if($aDate >= $bDate) continue;
+            $dates=[];
+            foreach($seriesByDevice[(int)$device['id']]??[] as $reading)
+                $dates[(string)$reading['reading_date']]=['reading_date'=>(string)$reading['reading_date'],'value'=>$reading['value']];
+            // Protokol má při výměně přednost před běžným odečtem ze stejného dne.
+            if($device['opening_value']!==null)
+                $dates[$installed]=['reading_date'=>$installed,'value'=>$device['opening_value']];
+            if($removed!==null && $device['closing_value']!==null)
+                $dates[(string)$removed]=['reading_date'=>(string)$removed,'value'=>$device['closing_value']];
+            ksort($dates,SORT_STRING);$observations=array_values($dates);
+            $a=self::boundary($observations,$aDate);$b=self::boundary($observations,$bDate);
+            if(!$a || !$b || $b['value']+0.00001 < $a['value']) return null;
+            $total+=$b['value']-$a['value'];$count++;
+            if($firstMethod===null) $firstMethod=$a['method'];
+            $lastMethod=$b['method'];
+            $estimated=$estimated || $a['method']!=='actual' || $b['method']!=='actual';
+            if($a['method']==='projected' || $b['method']==='projected')
+                $warnings[]='Odhad přesahuje dostupné odečty zařízení #'.$device['id'].' (max. 45 dní).';
+            if(($a['span']>92 && $a['method']!=='actual') || ($b['span']>92 && $b['method']!=='actual'))
+                $warnings[]='Odhad ze vzdálených odečtů zařízení #'.$device['id'].' (více než 92 dní).';
+        }
+        if($count===0) return null;
+        return ['value'=>round($total,4),'estimated'=>$estimated,'from'=>$firstMethod,'to'=>$lastMethod,
+            'warnings'=>$warnings,'segments'=>$count];
+    }
+
     /** Načtení podkladů jednou; graf je pak může použít pro řadu období bez opakování SQL. */
     private static function dataset(PDO $db): array {
         $meters=$db->query('SELECT * FROM meters ORDER BY id')->fetchAll(PDO::FETCH_ASSOC);
+        $devices=[];
+        foreach ($db->query('SELECT * FROM meter_devices ORDER BY meter_id,installed_on,id')->fetchAll(PDO::FETCH_ASSOC) as $row)
+            $devices[(int)$row['meter_id']][]=$row;
         $series=[];
-        foreach ($db->query('SELECT meter_id,reading_date,value FROM meter_readings ORDER BY meter_id,reading_date')->fetchAll(PDO::FETCH_ASSOC) as $row)
-            $series[(int)$row['meter_id']][]=$row;
+        foreach ($db->query('SELECT device_id,reading_date,value FROM meter_readings ORDER BY device_id,reading_date')->fetchAll(PDO::FETCH_ASSOC) as $row)
+            $series[(int)$row['device_id']][]=$row;
         $coefficients=[];
         foreach ($db->query('SELECT meter_id,effective_from,coefficient FROM meter_coefficients ORDER BY meter_id,effective_from')->fetchAll(PDO::FETCH_ASSOC) as $row)
             $coefficients[(int)$row['meter_id']][]=$row;
         $units=$db->query('SELECT id,wastewater_mode,name FROM units')->fetchAll(PDO::FETCH_ASSOC);
-        return compact('meters','series','coefficients','units');
+        return compact('meters','devices','series','coefficients','units');
     }
 
     private static function interval(array $data,string $start,string $end): array {
@@ -131,9 +176,8 @@ final class Consumption {
         $readings=[]; $coefs=[]; $warnings=[]; $estimated=[]; $details=[];
         foreach ($data['meters'] as $meter) {
             $id=(int)$meter['id'];
-            $items=$data['series'][$id]??[];
-            $a=self::boundary($items,$start); $b=self::boundary($items,$end);
-            if (!$a || !$b) continue;
+            $usage=self::deviceUsage($data['devices'][$id]??[],$data['series'],$start,$end);
+            if($usage===null) continue;
             $changes=$data['coefficients'][$id]??[];
             $current=1.0; $changed=false;
             foreach ($changes as $row) {
@@ -146,13 +190,11 @@ final class Consumption {
                 continue;
             }
             $coefs[$id]=$current;
-            $readings[$id]=['start'=>$a['value'],'end'=>$b['value']];
-            $estimated[$id]=$a['method']!=='actual'||$b['method']!=='actual';
-            $details[$id]=['from'=>$a['method'],'to'=>$b['method']];
-            if ($a['method']==='projected'||$b['method']==='projected')
-                $warnings[]='Měřidlo '.$meter['name'].': spotřeba obsahuje extrapolaci mimo poslední známý odečet (nejvýše 45 dní).';
-            if (($a['span']>92 && $a['method']!=='actual') || ($b['span']>92 && $b['method']!=='actual'))
-                $warnings[]='Měřidlo '.$meter['name'].': odhad vychází z odečtů vzdálených více než 92 dní.';
+            // calculate() dál pracuje s logickým meter_id a jeho hierarchií.
+            $readings[$id]=['start'=>0.0,'end'=>$usage['value']];
+            $estimated[$id]=$usage['estimated'];
+            $details[$id]=['from'=>$usage['from'],'to'=>$usage['to']];
+            foreach($usage['warnings'] as $warning) $warnings[]='Měřidlo '.$meter['name'].': '.$warning;
         }
         $result=self::calculate($data['meters'],$readings,$coefs,$estimated);
         $result['warnings']=array_merge($warnings,$result['warnings']);

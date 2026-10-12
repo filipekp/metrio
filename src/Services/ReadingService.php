@@ -5,11 +5,16 @@ function save_reading(array $user,int $meterId,string $date,string $raw, string 
     $meter=meter_for_reading($meterId,$user);
     if(!(int)$meter['active']) throw new RuntimeException('Měřidlo je neaktivní.');
     $day=valid_day($date);$value=valid_number($raw);
-    $prev=one('SELECT value FROM meter_readings WHERE meter_id=? AND reading_date<? ORDER BY reading_date DESC LIMIT 1',[$meterId,$day]);
-    $next=one('SELECT value FROM meter_readings WHERE meter_id=? AND reading_date>? ORDER BY reading_date ASC LIMIT 1',[$meterId,$day]);
-    if($prev && (float)$prev['value']>(float)$value) throw new RuntimeException('Odečet je nižší než předchozí stav. Při výměně měřidla založte nové měřidlo.');
-    if($next && (float)$next['value']<(float)$value) throw new RuntimeException('Odečet je vyšší než následující stav.');
-    sql('INSERT INTO meter_readings(meter_id,reading_date,value,source,photo_id,created_by) VALUES(?,?,?,?,?,?)',[$meterId,$day,$value,$source,$photo,$user['id']]);
+    $device=Energy\MeterRegistry::deviceOn(db(),$meterId,$day);
+    if(!$device) throw new RuntimeException('K datu odečtu není evidováno žádné instalované zařízení.');
+    if($day===(string)$device['installed_on'] && $device['opening_value']!==null)
+        throw new RuntimeException('Počáteční stav nového zařízení již eviduje protokol výměny. Další odečet zadejte až následující den.');
+    if(one('SELECT id FROM meter_readings WHERE device_id=? AND reading_date=?',[(int)$device['id'],$day]))
+        throw new RuntimeException('Pro tento den již existuje odečet vybraného zařízení.');
+    $limits=Energy\MeterRegistry::bounds(db(),$device,$day);
+    Energy\MeterRegistry::assertReadingInRange((float)$value,$limits);
+    sql('INSERT INTO meter_readings(meter_id,device_id,reading_date,value,source,photo_id,created_by) VALUES(?,?,?,?,?,?,?)',
+        [$meterId,(int)$device['id'],$day,$value,$source,$photo,$user['id']]);
     audit((int)$user['id'],'reading_create','měřidlo='.$meterId.' datum='.$day.' stav='.$value);
 }
 function photo_for(int $id,array $user): array {

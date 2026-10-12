@@ -17,3 +17,42 @@ foreach($meters as $m) {
     echo '</td></tr>';
 }
 echo '</table></section>';
+// Editace je vždy oddělená od protokolu fyzické výměny.
+if(is_admin($u)) {
+    echo '<section class="card"><h2>Upravit měřidlo</h2><p class="muted">Název a umístění lze opravit kdykoliv. U měřidla s odečty nelze zpětně měnit typ, objekt, byt nebo nadřazené měřidlo. Nové výrobní číslo se zapisuje výměnou.</p>';
+    foreach($meters as $m) {
+        $id=(int)$m['id'];
+        echo '<details><summary>'.html(meter_option_label($m,$labels)).'</summary>';
+        echo '<form method="post" class="inline">'.post_token().'<input type="hidden" name="action" value="meter_update"><input type="hidden" name="meter_id" value="'.$id.'">';
+        echo '<label>Objekt '.form_select('building_id',$buildings,$m['building_id']).'</label>';
+        echo '<label>Energie '.form_select('type',$labels,$m['type']).'</label>';
+        echo '<label>Název <input name="name" required maxlength="160" value="'.html($m['name']).'"></label>';
+        echo '<label>Výrobní číslo <input name="serial" maxlength="160" value="'.html($m['serial']).'"></label>';
+        echo '<label>Umístění <input name="location" maxlength="255" value="'.html($m['location']).'"></label>';
+        echo '<label>Jednotka '.form_select('unit_id',$uopts,$m['unit_id'],true).'</label>';
+        echo '<label>Nadřazené měřidlo '.form_select('parent_id',$mopts,$m['parent_id'],true).'</label>';
+        echo '<button>Uložit změny</button></form></details>';
+    }
+    echo '</section>';
+
+    echo '<section class="card"><h2>Výměna fyzického měřidla</h2>';
+    echo '<p class="muted">Před výměnou zaznamenejte datum, konečný stav starého a počáteční stav nového zařízení. Historie a vazby na byt se zachovají. Hodnoty mohou při výměně začít od nižšího čísla.</p>';
+    echo '<form method="post" class="inline">'.post_token().'<input type="hidden" name="action" value="meter_replace">';
+    echo '<label>Měřicí místo '.form_select('meter_id',$mopts).'</label>';
+    echo '<label>Datum výměny <input type="date" name="replacement_date" max="'.date('Y-m-d').'" value="'.date('Y-m-d').'" required></label>';
+    echo '<label>Konečný stav starého <input type="text" name="old_final" inputmode="decimal" placeholder="12540,00" required></label>';
+    echo '<label>Počáteční stav nového <input type="text" name="new_initial" inputmode="decimal" placeholder="0,00" required></label>';
+    echo '<label>Výrobní číslo nového <input name="new_serial" required maxlength="160"></label>';
+    echo '<label>Poznámka <input name="note" maxlength="255" placeholder="Výměna / plombování"></label>';
+    echo '<button>Potvrdit výměnu</button></form>';
+    echo '<h3>Historie fyzických zařízení</h3>';
+    foreach($meters as $m) {
+        $list=$devicesByMeter[(int)$m['id']]??[];
+        if(!$list) continue;
+        echo '<details><summary>'.html(meter_option_label($m,$labels)).' ('.count($list).' zařízení)</summary>';
+        echo '<table><thead><tr><th>Výrobní číslo</th><th>Od</th><th>Do</th><th>Počáteční stav</th><th>Konečný stav</th></tr></thead><tbody>';
+        foreach($list as $d) echo '<tr><td>'.html($d['serial']).'</td><td>'.html($d['installed_on']==='1900-01-01'?'Historické zařízení':$d['installed_on']).'</td><td>'.html($d['removed_on']??'Používá se').'</td><td>'.html($d['opening_value']??'—').'</td><td>'.html($d['closing_value']??'—').'</td></tr>';
+        echo '</tbody></table></details>';
+    }
+    echo '</section>';
+}

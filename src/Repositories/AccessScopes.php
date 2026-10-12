@@ -14,3 +14,10 @@ function meter_scope(array $user,bool $readable=false): array {
     // SQL omezuje výsledek na přístupné jednotky (ne načíst všechna cizí měřidla a filtrovat v PHP).
     return all($base.' JOIN unit_users au ON au.unit_id=m.unit_id WHERE au.user_id=?'.$order,[(int)$user['id']]);
 }
+
+/** Shodný popisek ve všech výběrech (objekt / energie / měřidlo). */
+function meter_option_label(array $meter,array $energyLabels): string {
+    $text=(string)$meter['building_name'].' / '.($energyLabels[$meter['type']]??$meter['type']).' / '.(string)$meter['name'];
+    if(!empty($meter['unit_name'])) $text.=' — jednotka: '.$meter['unit_name'];
+    return $text;
+}

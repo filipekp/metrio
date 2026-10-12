@@ -41,6 +41,25 @@ function metrio_dispatch(): void {
         header('Allow: GET, POST');
         exit;
     }
+    if ($page === 'reading_limits') {
+        header('Content-Type: application/json; charset=utf-8');
+        $u=require_login();
+        try {
+            $mid=(int)($_GET['meter_id']??0);
+            $day=valid_day((string)($_GET['date']??''));
+            meter_for_reading($mid,$u);
+            $device=Energy\MeterRegistry::deviceOn(db(),$mid,$day);
+            if(!$device) throw new RuntimeException('K tomuto datu není zařízení instalováno.');
+            $limits=Energy\MeterRegistry::bounds(db(),$device,$day);
+            $limits['installation_day']=$device['opening_value']!==null && $day===$device['installed_on'];
+            $limits['duplicate']=(bool)one('SELECT id FROM meter_readings WHERE device_id=? AND reading_date=?',[(int)$device['id'],$day]);
+            echo json_encode(['ok'=>true,'limits'=>$limits],JSON_UNESCAPED_UNICODE);
+        } catch(Throwable $e) {
+            http_response_code(400);
+            echo json_encode(['ok'=>false,'message'=>$e->getMessage()],JSON_UNESCAPED_UNICODE);
+        }
+        return;
+    }
     if ($page === 'photo_file') {
         $u=require_login();
         require APP_ROOT . '/src/Modules/Readings/photo_file.php';
