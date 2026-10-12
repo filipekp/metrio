@@ -137,3 +137,14 @@ zůstane rozdíl dohledatelný; při `php bin/migrate.php` bude označen jako
 
 Před aktualizací si zazálohujte databázi – provedené DDL příkazy se v MariaDB
 nemusí dát automaticky vrátit zpět.
+
+## Moderní dashboard (Bootstrap 5)
+
+Rozhraní používá lokálně uložený Bootstrap 5.3.6 (`public/assets/vendor/bootstrap.min.css`, licence MIT v sousedním souboru) a vlastní styly v `public/assets/app.css`. Nezávisí na CDN ani na npm a funguje na sdíleném hostingu WEDOS s PHP 7.3. Mobilní postranní navigaci zajišťuje nenáročný `public/assets/app.js` bez dalších knihoven.
+
+- Navigace a oprávnění zůstávají serverově řízené podle rolí administrátor / správce objektu / uživatel.
+- Dashboard používá pouze skutečné měřiče a dostupná data přístupných jednotek; při chybějících odečtech se zobrazí informace místo vymyšlených hodnot.
+- Souhrn aktuálního měsíce a graf za posledních šest měsíců mohou zahrnovat odhadovanou spotřebu; stav je označený. Graf na přehledu ukazuje první dostupnou jednotku a energii, detail všech jednotek je na stránce Spotřeby a grafy.
+- Všechny dosavadní akce, formuláře a databázové migrace jsou zachované; pro redesign není potřeba migrace databáze.
+
+Kontrola po instalaci: `php tests/php73_compatibility.php` (v GitHub Actions se vykoná pod PHP 7.3).
