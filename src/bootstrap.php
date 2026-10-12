@@ -71,6 +71,14 @@ function require_login(): array {
 }
 function admin_only(array $user): void { if ($user['role'] !== 'admin') { http_response_code(403); exit('Přístup odepřen'); } }
 function is_admin(array $user): bool { return $user['role'] === 'admin'; }
+function is_manager(array $user): bool { return $user['role'] === 'manager'; }
+/** Správce vidí celý přiřazený objekt, ale nemůže měnit účty ani konfiguraci měřidel. */
+function manages_building(array $user, int $buildingId): bool {
+    if (is_admin($user)) return true;
+    if (!is_manager($user) || $buildingId <= 0) return false;
+    return (bool)one('SELECT 1 FROM building_managers WHERE user_id=? AND building_id=?', [(int)$user['id'], $buildingId]);
+}
+
 function csrf(): string { start_session(); return $_SESSION['csrf'] ??= bin2hex(random_bytes(24)); }
 function check_csrf(): void {
     start_session();
@@ -106,24 +114,32 @@ function valid_day(string $value): string {
     return $value;
 }
 function can_view_unit(array $user, int $unit): bool {
-    return is_admin($user) || (bool)one('SELECT 1 FROM unit_users WHERE unit_id=? AND user_id=?',[$unit,$user['id']]);
+    if (is_admin($user)) return true;
+    if (is_manager($user)) {
+        $row = one('SELECT building_id FROM units WHERE id=?', [$unit]);
+        return $row !== null && manages_building($user, (int)$row['building_id']);
+    }
+    return (bool)one('SELECT 1 FROM unit_users WHERE unit_id=? AND user_id=?',[$unit,$user['id']]);
 }
 function can_read_meter(array $user, array $meter): bool {
     if (is_admin($user)) return true;
-    if (!$meter['unit_id'] || !can_view_unit($user,(int)$meter['unit_id'])) return false;
-    // Uživatel nesmí dostat nadřazené odečty, ze kterých by zjistil spotřebu cizí jednotky.
-    return !one('SELECT 1 FROM meters WHERE parent_id=? LIMIT 1', [$meter['id']]);
+    if (is_manager($user)) return manages_building($user, (int)$meter['building_id']);
+    // Běžný uživatel vidí přímo měřidla přiřazená jeho jednotce.
+    // Hlavní měřidlo NEZAKAZUJEME jen proto, že má podružná měřidla.
+    // Nepřiřazená a cizí měřidla stále nejsou přístupná.
+    return !empty($meter['unit_id']) && can_view_unit($user,(int)$meter['unit_id']);
 }
 function meter_for_reading(int $id,array $user): array {
     $meter=one('SELECT * FROM meters WHERE id=?',[$id]);
     if (!$meter || !can_read_meter($user,$meter)) { http_response_code(403); throw new RuntimeException('K tomuto měřidlu nemáte oprávnění.'); }
     return $meter;
 }
+function role_label(string $role): string { return ['admin'=>'Administrátor','manager'=>'Správce objektu','user'=>'Uživatel'][$role]??$role; }
 function page_header(string $title,?array $user=null): void {
     $app=html(config('APP_NAME','Evidence energií'));
     echo '<!doctype html><html lang="cs"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>'.html($title).' · '.$app.'</title><link rel="stylesheet" href="assets/app.css"></head><body>';
     if ($user) {
-        echo '<header><div class="top"><strong>⚡ '.$app.'</strong><div class="muted">'.html($user['name']).' · '.html($user['role']).'</div></div><nav>';
+        echo '<header><div class="top"><strong>⚡ '.$app.'</strong><div class="muted">'.html($user['name']).' · '.html(role_label($user['role'])).'</div></div><nav>';
         foreach (['dashboard'=>'Přehled','units'=>'Jednotky','meters'=>'Měřidla','consumption'=>'Spotřeby','readings'=>'Odečty'] as $page=>$label)
             echo '<a href="?page='.$page.'">'.$label.'</a>';
         if (is_admin($user)) { echo '<a href="?page=buildings">Objekty</a><a href="?page=users">Uživatelé</a><a href="?page=update">Aktualizace</a>'; }

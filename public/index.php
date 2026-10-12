@@ -17,20 +17,25 @@ function save_reading(array $user,int $meterId,string $date,string $raw, string 
     audit((int)$user['id'],'reading_create','měřidlo='.$meterId.' datum='.$day.' stav='.$value);
 }
 function photo_for(int $id,array $user): array {
-    $photo=one('SELECT p.*,m.name AS meter_name,m.type AS meter_type,m.unit_id,m.id AS meter_id FROM reading_photos p JOIN meters m ON m.id=p.meter_id WHERE p.id=?',[$id]);
-    if(!$photo || (!is_admin($user) && ((int)$photo['user_id'] !== (int)$user['id'] || !can_read_meter($user,$photo)))) {
+    $photo=one('SELECT p.*,m.name AS meter_name,m.type AS meter_type,m.unit_id,m.building_id,m.id AS meter_id FROM reading_photos p JOIN meters m ON m.id=p.meter_id WHERE p.id=?',[$id]);
+    if(!$photo || !can_read_meter($user,$photo)
+        || (!is_admin($user) && !is_manager($user) && (int)$photo['user_id'] !== (int)$user['id'])) {
         http_response_code(403); throw new RuntimeException('Fotografie není dostupná.');
     }
     return $photo;
 }
 function unit_scope(array $user): array {
     if(is_admin($user)) return all('SELECT u.*,b.name AS building_name FROM units u JOIN buildings b ON b.id=u.building_id ORDER BY b.name,u.name');
+    if(is_manager($user)) return all('SELECT u.*,b.name AS building_name FROM units u JOIN buildings b ON b.id=u.building_id JOIN building_managers bm ON bm.building_id=b.id WHERE bm.user_id=? ORDER BY b.name,u.name',[$user['id']]);
     return all('SELECT u.*,b.name AS building_name FROM units u JOIN buildings b ON b.id=u.building_id JOIN unit_users au ON au.unit_id=u.id WHERE au.user_id=? ORDER BY b.name,u.name',[$user['id']]);
 }
 function meter_scope(array $user,bool $readable=false): array {
-    $meters=all('SELECT m.*,b.name AS building_name,u.name AS unit_name,p.name AS parent_name FROM meters m JOIN buildings b ON b.id=m.building_id LEFT JOIN units u ON u.id=m.unit_id LEFT JOIN meters p ON p.id=m.parent_id ORDER BY b.name,m.type,m.parent_id,m.name');
-    if(is_admin($user)) return $meters;
-    return array_values(array_filter($meters, static fn($m)=> $m['unit_id'] && can_read_meter($user,$m)));
+    $base='SELECT m.*,b.name AS building_name,u.name AS unit_name,p.name AS parent_name FROM meters m JOIN buildings b ON b.id=m.building_id LEFT JOIN units u ON u.id=m.unit_id LEFT JOIN meters p ON p.id=m.parent_id';
+    $order=' ORDER BY b.name,m.type,m.parent_id,m.name';
+    if(is_admin($user)) return all($base.$order);
+    if(is_manager($user)) return all($base.' JOIN building_managers bm ON bm.building_id=m.building_id WHERE bm.user_id=?'.$order,[(int)$user['id']]);
+    // SQL omezuje výsledek na přístupné jednotky (ne načíst všechna cizí měřidla a filtrovat v PHP).
+    return all($base.' JOIN unit_users au ON au.unit_id=m.unit_id WHERE au.user_id=?'.$order,[(int)$user['id']]);
 }
 
 if($page==='photo_file') {
@@ -80,7 +85,7 @@ if($_SERVER['REQUEST_METHOD']==='POST') {
         if($action==='user_create') {
             admin_only($u);$email=strtolower(trim((string)($_POST['email']??'')));$name=trim((string)($_POST['name']??''));$password=(string)($_POST['password']??'');
             $role=(string)($_POST['role']??'user');
-            if(!filter_var($email,FILTER_VALIDATE_EMAIL) || $name==='' || strlen($password)<12 || !in_array($role,['user','admin'],true)) throw new RuntimeException('Zadejte jméno, platný e-mail a heslo alespoň 12 znaků.');
+            if(!filter_var($email,FILTER_VALIDATE_EMAIL) || $name==='' || strlen($password)<12 || !in_array($role,['user','manager','admin'],true)) throw new RuntimeException('Zadejte jméno, platný e-mail a heslo alespoň 12 znaků.');
             sql('INSERT INTO users(name,email,password_hash,role) VALUES(?,?,?,?)',[$name,$email,password_hash($password,PASSWORD_DEFAULT),$role]);
             audit((int)$u['id'],'user_create',$email);redirect('users','Uživatel přidán.');
         }
@@ -101,21 +106,42 @@ if($_SERVER['REQUEST_METHOD']==='POST') {
             $target=one('SELECT * FROM users WHERE id=?',[$id]);
             if(!$target) throw new RuntimeException('Uživatel neexistuje.');
             $name=trim((string)($_POST['name']??''));$role=(string)($_POST['role']??'user');$password=(string)($_POST['password']??'');
-            if($name==='' || !in_array($role,['admin','user'],true) || ($password!=='' && strlen($password)<12))
+            if($name==='' || !in_array($role,['admin','manager','user'],true) || ($password!=='' && strlen($password)<12))
                 throw new RuntimeException('Neplatné jméno, role nebo heslo kratší než 12 znaků.');
             if($id===(int)$u['id'] && $role!=='admin') throw new RuntimeException('Nelze odebrat vlastní administrátorskou roli.');
             if($target['role']==='admin' && $target['is_active'] && $role!=='admin') {
                 $count=one("SELECT COUNT(*) AS c FROM users WHERE role='admin' AND is_active=1");
                 if((int)$count['c']<=1) throw new RuntimeException('Posledního administrátora nelze změnit na uživatele.');
             }
-            if($password==='') sql('UPDATE users SET name=?,role=? WHERE id=?',[$name,$role,$id]);
-            else sql('UPDATE users SET name=?,role=?,password_hash=? WHERE id=?',[$name,$role,password_hash($password,PASSWORD_DEFAULT),$id]);
+            db()->beginTransaction();
+            try {
+                if($password==='') sql('UPDATE users SET name=?,role=? WHERE id=?',[$name,$role,$id]);
+                else sql('UPDATE users SET name=?,role=?,password_hash=? WHERE id=?',[$name,$role,password_hash($password,PASSWORD_DEFAULT),$id]);
+                // Při odebrání role správce odebrat i stará přiřazení, aby se po opětovném povýšení neoživila.
+                if($role!=='manager') sql('DELETE FROM building_managers WHERE user_id=?',[$id]);
+                db()->commit();
+            } catch(Throwable $e) { db()->rollBack(); throw $e; }
             audit((int)$u['id'],'user_update',(string)$id);redirect('users','Uživatel upraven.');
         }
         if($action==='unit_user_remove') {
             admin_only($u);$id=(int)($_POST['unit_id']??0);$uid=(int)($_POST['user_id']??0);
             sql('DELETE FROM unit_users WHERE unit_id=? AND user_id=?',[$id,$uid]);
             audit((int)$u['id'],'unit_user_remove',$id.':'.$uid);redirect('users','Přístup odebrán.');
+        }
+        if($action==='building_manager_add') {
+            admin_only($u); $id=(int)($_POST['building_id']??0); $uid=(int)($_POST['user_id']??0);
+            if(!one('SELECT id FROM buildings WHERE id=?',[$id])) throw new RuntimeException('Objekt neexistuje.');
+            $target=one('SELECT id,role FROM users WHERE id=?',[$uid]);
+            if(!$target || $target['role']!=='manager') throw new RuntimeException('Přístup k objektu lze přiřadit jen uživateli s rolí Správce objektu.');
+            sql('INSERT IGNORE INTO building_managers(building_id,user_id) VALUES(?,?)',[$id,$uid]);
+            audit((int)$u['id'],'building_manager_add',$id.':'.$uid);
+            redirect('users','Správce přiřazen k objektu.');
+        }
+        if($action==='building_manager_remove') {
+            admin_only($u); $id=(int)($_POST['building_id']??0); $uid=(int)($_POST['user_id']??0);
+            sql('DELETE FROM building_managers WHERE building_id=? AND user_id=?',[$id,$uid]);
+            audit((int)$u['id'],'building_manager_remove',$id.':'.$uid);
+            redirect('users','Přístup správce k objektu odebrán.');
         }
         if($action==='unit_user') {
             admin_only($u);$id=(int)($_POST['unit_id']??0);$uid=(int)($_POST['user_id']??0);
@@ -231,7 +257,7 @@ if($page==='export') {
 if($page==='dashboard') {
     page_header('Přehled',$u);
     $units=unit_scope($u);$meters=meter_scope($u);$n=count($units);
-    echo '<div class="stats"><section class="card"><small>Moje jednotky</small><strong>'.$n.'</strong></section><section class="card"><small>Viditelná měřidla</small><strong>'.count($meters).'</strong></section><section class="card"><small>Uživatelská role</small><strong>'.html($u['role']).'</strong></section></div>';
+    echo '<div class="stats"><section class="card"><small>'.(is_admin($u)?'Všechny jednotky':(is_manager($u)?'Jednotky spravovaných objektů':'Moje jednotky')).'</small><strong>'.$n.'</strong></section><section class="card"><small>Viditelná měřidla</small><strong>'.count($meters).'</strong></section><section class="card"><small>Uživatelská role</small><strong>'.html(role_label($u['role'])).'</strong></section></div>';
     echo '<section class="card"><h2>Rychlé akce</h2><p><a class="button" href="?page=readings">Zapsat odečet / vyfotit měřidlo</a> <a class="button secondary" href="?page=consumption">Vypočítat spotřebu</a></p><p class="muted">Výsledky jsou založené na odečtech k přesným hranicím období a platných koeficientech.</p></section>';
     page_footer();exit;
 }
@@ -258,24 +284,44 @@ if($page==='units') {
     echo '</table></section>';page_footer();exit;
 }
 if($page==='users') {
-    admin_only($u);page_header('Uživatelé',$u);$users=all('SELECT * FROM users ORDER BY name');$units=unit_scope($u);
-    echo '<section class="card"><h2>Nový uživatel</h2><form method="post" class="inline">'.post_token().'<input type="hidden" name="action" value="user_create"><label>Jméno <input name="name" required></label><label>E-mail <input type="email" name="email" required></label><label>Heslo (12+ znaků) <input type="password" name="password" minlength="12" required></label><label>Role '.form_select('role',['user'=>'Uživatel','admin'=>'Administrátor']).'</label><button>Vytvořit</button></form></section>';
-    echo '<section class="card"><h2>Přiřadit přístup k jednotce</h2><form method="post" class="inline">'.post_token().'<input type="hidden" name="action" value="unit_user"><label>Uživatel ';$opts=[];
-    foreach($users as $x) $opts[$x['id']]=$x['name'].' ('.$x['email'].')';echo form_select('user_id',$opts).'</label><label>Jednotka '.form_select('unit_id',unit_options($units)).'</label><button>Přiřadit</button></form></section>';
-    echo '<section class="card"><h2>Seznam uživatelů</h2><table><tr><th>Jméno</th><th>E-mail</th><th>Role</th><th>Jednotky</th><th>Stav</th></tr>';
+    admin_only($u);page_header('Uživatelé',$u);
+    $users=all('SELECT * FROM users ORDER BY name');$units=unit_scope($u);
+    $roleOptions=['user'=>'Uživatel','manager'=>'Správce objektu','admin'=>'Administrátor'];
+    echo '<section class="card"><h2>Nový uživatel</h2><form method="post" class="inline">'.post_token().'<input type="hidden" name="action" value="user_create"><label>Jméno <input name="name" required></label><label>E-mail <input type="email" name="email" required></label><label>Heslo (12+ znaků) <input type="password" name="password" minlength="12" required></label><label>Role '.form_select('role',$roleOptions).'</label><button>Vytvořit</button></form></section>';
+    echo '<section class="card"><h2>Přiřadit přístup k jednotce</h2><p class="muted">Uživatel uvidí měřidla přidělená této jednotce, včetně hlavního měřidla s podružnými měřidly. Odečty cizích měřidel neuvidí.</p><form method="post" class="inline">'.post_token().'<input type="hidden" name="action" value="unit_user"><label>Uživatel ';
+    $opts=[];foreach($users as $x) $opts[$x['id']]=$x['name'].' ('.$x['email'].')';
+    echo form_select('user_id',$opts).'</label><label>Jednotka '.form_select('unit_id',unit_options($units)).'</label><button>Přiřadit</button></form></section>';
+
+    $buildings=all('SELECT id,name FROM buildings ORDER BY name');$buildingOptions=[];
+    foreach($buildings as $b) $buildingOptions[$b['id']]=$b['name'];
+    $managers=array_values(array_filter($users,static fn($x)=>$x['role']==='manager'));
+    $managerOptions=[];foreach($managers as $x) $managerOptions[$x['id']]=$x['name'].' ('.$x['email'].')';
+    echo '<section class="card"><h2>Správci objektů</h2><p class="muted">Správce vidí všechna měřidla a odečty přiřazených objektů a může zadávat ruční i fotografické odečty. Nemá právo měnit uživatele, objekty, nastavení měřidel ani koeficienty.</p>';
+    if($managerOptions && $buildingOptions) {
+        echo '<form method="post" class="inline">'.post_token().'<input type="hidden" name="action" value="building_manager_add"><label>Správce '.form_select('user_id',$managerOptions).'</label><label>Objekt '.form_select('building_id',$buildingOptions).'</label><button>Přiřadit objekt</button></form>';
+    } else echo '<p class="muted">Nejdříve založte (nebo upravte) uživatele s rolí Správce objektu a vytvořte objekt.</p>';
+    $managed=all('SELECT bm.building_id,bm.user_id,u.name AS uname,b.name AS bname FROM building_managers bm JOIN users u ON u.id=bm.user_id JOIN buildings b ON b.id=bm.building_id ORDER BY b.name,u.name');
+    echo '<table><tr><th>Správce</th><th>Objekt</th><th>Akce</th></tr>';
+    foreach($managed as $access) {
+        echo '<tr><td>'.html($access['uname']).'</td><td>'.html($access['bname']).'</td><td><form method="post" class="inline">'.post_token().'<input type="hidden" name="action" value="building_manager_remove"><input type="hidden" name="user_id" value="'.(int)$access['user_id'].'"><input type="hidden" name="building_id" value="'.(int)$access['building_id'].'"><button class="small secondary" onclick="return confirm(&quot;Odebrat správci přístup k objektu?&quot;)">Odebrat přístup</button></form></td></tr>';
+    }
+    echo '</table></section>';
+
+    echo '<section class="card"><h2>Seznam uživatelů a jejich jednotek</h2><p class="muted">Přístup k jednotlivé jednotce odeberete přímo u uživatele tlačítkem Odebrat.</p><table><tr><th>Jméno</th><th>E-mail</th><th>Role</th><th>Přístupy k jednotkám</th><th>Stav</th></tr>';
     foreach($users as $x) {
-        $owned=all('SELECT u.name FROM units u JOIN unit_users a ON a.unit_id=u.id WHERE a.user_id=?',[$x['id']]);
-        echo '<tr><td>'.html($x['name']).'</td><td>'.html($x['email']).'</td><td>'.html($x['role']).'</td><td>'.html(implode(', ',array_column($owned,'name'))).'</td><td><form method="post" class="inline">'.post_token().'<input type="hidden" name="action" value="user_toggle"><input type="hidden" name="user_id" value="'.(int)$x['id'].'"><button class="small secondary">'.($x['is_active']?'Aktivní – deaktivovat':'Neaktivní – aktivovat').'</button></form></td></tr>';
+        $owned=all('SELECT u.id,u.name,b.name AS building_name FROM units u JOIN unit_users a ON a.unit_id=u.id JOIN buildings b ON b.id=u.building_id WHERE a.user_id=? ORDER BY b.name,u.name',[$x['id']]);
+        echo '<tr><td>'.html($x['name']).'</td><td>'.html($x['email']).'</td><td>'.html(role_label($x['role'])).'</td><td>';
+        if(!$owned) echo '<span class="muted">Bez jednotky</span>';
+        foreach($owned as $unit) {
+            echo '<form method="post" class="inline access-entry">'.post_token().'<input type="hidden" name="action" value="unit_user_remove"><input type="hidden" name="user_id" value="'.(int)$x['id'].'"><input type="hidden" name="unit_id" value="'.(int)$unit['id'].'"><span>'.html($unit['building_name'].' / '.$unit['name']).'</span><button class="small secondary" onclick="return confirm(&quot;Odebrat přístup k jednotce?&quot;)">Odebrat</button></form>';
+        }
+        echo '</td><td><form method="post" class="inline">'.post_token().'<input type="hidden" name="action" value="user_toggle"><input type="hidden" name="user_id" value="'.(int)$x['id'].'"><button class="small secondary">'.($x['is_active']?'Aktivní – deaktivovat':'Neaktivní – aktivovat').'</button></form></td></tr>';
     }
-    echo '</table></section><section class="card"><h2>Upravit uživatele</h2><p class="muted">Heslo nechte prázdné, pokud jej nechcete měnit.</p><div class="user-edit-grid">';
+    echo '</table></section><section class="card"><h2>Upravit uživatele</h2><p class="muted">Heslo nechte prázdné, pokud jej nechcete měnit. Při odebrání role správce se odstraní také jeho přiřazení k objektům.</p><div class="user-edit-grid">';
     foreach($users as $x) {
-        echo '<form method="post" class="inline">'.post_token().'<input type="hidden" name="action" value="user_update"><input type="hidden" name="user_id" value="'.(int)$x['id'].'"><label>Jméno <input name="name" value="'.html($x['name']).'" required></label><label>Role '.form_select('role',['user'=>'Uživatel','admin'=>'Administrátor'],$x['role']).'</label><label>Nové heslo <input name="password" type="password" minlength="12" autocomplete="new-password"></label><button>Upravit '.html($x['email']).'</button></form><hr>';
+        echo '<form method="post" class="inline">'.post_token().'<input type="hidden" name="action" value="user_update"><input type="hidden" name="user_id" value="'.(int)$x['id'].'"><label>Jméno <input name="name" value="'.html($x['name']).'" required></label><label>Role '.form_select('role',$roleOptions,$x['role']).'</label><label>Nové heslo <input name="password" type="password" minlength="12" autocomplete="new-password"></label><button>Upravit '.html($x['email']).'</button></form><hr>';
     }
-    echo '</div></section><section class="card"><h2>Odebrat přístup k jednotce</h2><table><tr><th>Uživatel</th><th>Jednotka</th><th>Akce</th></tr>';
-    foreach(all('SELECT a.unit_id,a.user_id,u.name AS uname,t.name AS unitname FROM unit_users a JOIN users u ON u.id=a.user_id JOIN units t ON t.id=a.unit_id ORDER BY u.name,t.name') as $access) {
-        echo '<tr><td>'.html($access['uname']).'</td><td>'.html($access['unitname']).'</td><td><form method="post">'.post_token().'<input type="hidden" name="action" value="unit_user_remove"><input type="hidden" name="user_id" value="'.(int)$access['user_id'].'"><input type="hidden" name="unit_id" value="'.(int)$access['unit_id'].'"><button class="small secondary">Odebrat</button></form></td></tr>';
-    }
-    echo '</table></section>';page_footer();exit;
+    echo '</div></section>';page_footer();exit;
 }
 if($page==='meters') {
     page_header('Měřidla',$u);$meters=meter_scope($u);
@@ -336,7 +382,8 @@ if($page==='consumption') {
             foreach($result['warnings'] as $warning) echo '<li>'.html($warning).'</li>';
             echo '</ul></section>';
         }
-        if(!is_admin($u)) echo '<p class="muted">Zobrazeny jsou pouze vaše spotřeby. Výchozí/neúplné odečty řeší administrátor.</p>';
+        if(!is_admin($u) && !is_manager($u)) echo '<p class="muted">Zobrazeny jsou pouze spotřeby vašich jednotek. Neúplné odečty řeší správce objektu nebo administrátor.</p>';
+        if(is_manager($u)) echo '<p class="muted">Zobrazeny jsou spotřeby spravovaných objektů. Měřidla a koeficienty nastavuje administrátor.</p>';
     } catch(Throwable $e) {echo '<p class="flash">'.html($e->getMessage()).'</p>';}
     page_footer();exit;
 }
