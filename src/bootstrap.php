@@ -4,7 +4,7 @@ const APP_ROOT = __DIR__ . '/..';
 date_default_timezone_set('Europe/Prague');
 
 spl_autoload_register(static function (string $class): void {
-    if (str_starts_with($class, 'Energy\\')) {
+    if (strpos($class, 'Energy\\') === 0) {
         $name = substr($class, strlen('Energy\\'));
         $file = __DIR__ . '/' . str_replace('\\', '/', $name) . '.php';
         if (is_file($file)) require $file;
@@ -19,7 +19,7 @@ function config(string $name, string $default = ''): string {
         if (is_file($filename)) {
             foreach (file($filename, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $line) {
                 $line = trim($line);
-                if ($line === '' || $line[0] === '#' || !str_contains($line, '=')) continue;
+                if ($line === '' || $line[0] === '#' || strpos($line, '=') === false) continue;
                 [$key, $value] = explode('=', $line, 2);
                 $values[trim($key)] = trim(trim($value), '"\'');
             }
@@ -49,7 +49,7 @@ function sql(string $query, array $params = []): PDOStatement {
 }
 function all(string $query, array $params = []): array { return sql($query,$params)->fetchAll(); }
 function one(string $query, array $params = []): ?array { $x=sql($query,$params)->fetch(); return $x ?: null; }
-function html(mixed $x): string { return htmlspecialchars((string)$x, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }
+function html($x): string { return htmlspecialchars((string)$x, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }
 function start_session(): void {
     if (PHP_SAPI === 'cli' || session_status() === PHP_SESSION_ACTIVE) return;
     if (config('APP_ENV','production') === 'production' && empty($_SERVER['HTTPS'])) {
@@ -85,7 +85,7 @@ function check_csrf(): void {
     if (!hash_equals(csrf(), (string)($_POST['_csrf']??''))) { http_response_code(419); exit('Neplatný CSRF token'); }
 }
 function post_token(): string { return '<input type="hidden" name="_csrf" value="'.html(csrf()).'">'; }
-function redirect(string $page, string $message=''): never {
+function redirect(string $page, string $message=''): void {
     if ($message !== '') { start_session(); $_SESSION['flash']=$message; }
     header('Location: ?page=' . rawurlencode($page)); exit;
 }
@@ -148,7 +148,7 @@ function page_header(string $title,?array $user=null): void {
     echo '<main><h1>'.html($title).'</h1>'.flash();
 }
 function page_footer(): void { echo '</main><footer>Evidence energií · '.html(trim((string)@file_get_contents(APP_ROOT.'/VERSION'))).'</footer></body></html>'; }
-function form_select(string $name,array $options,mixed $selected=null,bool $optional=false): string {
+function form_select(string $name,array $options,$selected=null,bool $optional=false): string {
     $out='<select name="'.html($name).'">'; if($optional) $out.='<option value="">— bez přiřazení —</option>';
     foreach($options as $val=>$label) $out.='<option value="'.html($val).'"'.((string)$selected===(string)$val?' selected':'').'>'.html($label).'</option>';
     return $out.'</select>';

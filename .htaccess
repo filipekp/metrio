@@ -1,15 +1,19 @@
+# Metrio — Apache/WEDOS; umístěte do kořene konkrétního webu, NE do globálního www/.htaccess WEDOSu.
 Options -Indexes
-DirectoryIndex index.php
-
-AddType application/manifest+json .webmanifest
-
-
+<IfModule mod_rewrite.c>
 RewriteEngine On
-
-# Citlivé adresáře a soubory nesmí být dostupné přímo z webu.
-RewriteRule ^(?:src|sql|templates|storage|data|bin|\.updates|\.git)(?:/|$) - [F,L,NC]
-RewriteRule ^(?:\.env(?:\..*)?|README\.md|CODING_STYLE\.md|Dockerfile|docker-compose\.yml|\.editorconfig|\.gitignore)$ - [F,L,NC]
-
-# WEDOS/shared hosting: interně obsluhuj aplikaci z public/.
-# Negativní podmínka zabraňuje opakovanému přepisování.
-RewriteRule ^(?!public(?:/|$))(.*)$ public/$1 [L]
+# Server-side data and project files must never be served directly.
+RewriteRule ^(?:src|bin|migrations|storage|tests|\.git|\.github)(?:/|$) - [F,L,NC]
+RewriteRule ^(?:\.env(?:\..*)?|\.gitignore|\.htaccess|VERSION|README\.md|Dockerfile|compose\.yaml|composer\.(?:json|lock)|.*\.(?:sql|patch|bak|log))$ - [F,L,NC]
+# Public assets and two explicit PHP entry points.
+RewriteRule ^assets/(.*)$ public/assets/$1 [L]
+RewriteRule ^install\.php$ public/install.php [L]
+RewriteRule ^deploy\.php$ public/deploy.php [L]
+RewriteRule ^(?:index\.php)?$ public/index.php [L]
+# Avoid rewrite loops for internal rewrites to public/.
+RewriteRule ^public/ - [L]
+RewriteRule ^.*$ public/index.php [L]
+</IfModule>
+<FilesMatch "^(?:\.env(?:\..*)?|\.htaccess|\.gitignore)$">
+Require all denied
+</FilesMatch>

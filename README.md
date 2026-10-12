@@ -4,9 +4,9 @@ První funkční verze systému pro evidenci elektřiny, plynu, studené vody, t
 
 ## Požadavky
 
-- PHP **8.2+**, `pdo_mysql`, `fileinfo`, `curl` a `zip` (rozšíření cURL a ZipArchive nutná pro AI / aktualizace).
+- PHP **7.4+**, `pdo_mysql`, `fileinfo`, `curl` a `zip` (rozšíření cURL a ZipArchive nutná pro AI / aktualizace).
 - MariaDB 10.6+ (testovací Docker Compose používá MariaDB 11.4).
-- Apache/Nginx s **DocumentRoot nastaveným na adresář `public/`**. Nikdy nevystavujte kořen projektu ani adresáře `src`, `storage`, `migrations` a `.env`.
+- Apache/Nginx se směrováním na `public/`; na WEDOS Apache použijte kořenový `.htaccess` a postup níže. Privátní soubory nesmí být veřejně přístupné.
 - HTTPS pro produkci a používání kamery v mobilním prohlížeči.
 - Pro AI čtení fotografie volitelně OpenAI API klíč (služba je placená dle jejího tarifu a fotografie se odesílá externímu poskytovateli).
 
@@ -99,3 +99,25 @@ find src bin public tests -type f -name '*.php' -exec php -l {} \;
 ```
 
 Připravená testovací sada ověřuje poměrné odhady, odhady s omezením do 45 dnů, kalendářní dny, jednoduché odečtení, koeficient, víceúrovňová měřidla, záporný zbytek a chybějící odečet. Integrační testy MariaDB vyžadují běžící DB a nejsou zahrnuty do této samostatné distribuce.
+
+
+## WEDOS webhosting (PHP 7.4, bez Dockeru a SSH) – od verze 0.1.3
+
+Tato verze je napsaná pro **PHP 7.4+** a používá PDO MySQL, session, fileinfo.
+Pro AI a aktualizace přes GitHub potřebujete cURL; pro aktualizace také ZipArchive a povolení zápisu do adresáře projektu.
+Webhosting WEDOS má typicky veřejné adresáře `www` a `www/domains/nazev-domeny.cz`; nemůžete automaticky předpokládat možnost změnit document root na `/public`.
+
+**Bezpečné nasazení přes FTP:**
+
+1. V administraci WEDOS nastavte PHP 7.4 nebo novější (doporučuje se podporovaná 8.2+).
+2. Do **kořene konkrétního webu** např. `www/domains/metrio.example.cz/` nahrajte celý projekt (`.htaccess`, `public/`, `src/`, `migrations/`, `bin/`, `VERSION`, `storage/`). **Nenahrazujte globální** `www/.htaccess` WEDOSu. Složky `storage/photos` a `storage/deploy-backups` musí být zapisovatelné pro PHP.
+3. Vytvořte `.env` podle `.env.example`; nastavte databázový host/port/jméno/uživatele přesně podle WEDOS administrace (nikoli Docker hostname `mariadb`), HTTPS URL a unikátní `INSTALL_TOKEN` tvořený **64 hexadecimálními znaky** (např. výstup `openssl rand -hex 32`). Nevkládejte jej do GitHubu.
+4. Otevřete `https://metrio.example.cz/install.php`, vyplňte instalační klíč a klikněte na **Spustit migrace**. Poté na stejné stránce vytvořte prvního administrátora.
+5. **Neprodleně smažte `INSTALL_TOKEN` ze souboru `.env`.** Tím se `install.php` vypne (HTTP 404). Přihlaste se do aplikace.
+6. Před provozem ověřte, že **`/src/bootstrap.php`, `/.env`, `/storage/photos/...`, `/migrations/001_initial.sql` odpovídají HTTP 403/404**, nikoli obsahem souboru. Pokud Apache nepoužívá `.htaccess`/mod_rewrite, nasazení takto není bezpečné – aplikaci nevystavujte do internetu.
+
+Kořenový `.htaccess` bezpečně směruje `/` a `/index.php` do `public/index.php`, `/assets` do `public/assets` a `/install.php` do `public/install.php`. Privátní soubory se nesmí načítat přímo přes URL.
+
+**Aktualizace:** po nastavení `GITHUB_REPOSITORY` může administrátor použít stránku **Aktualizace**; nasazení musí obsahovat GitHub Release asset `evidence-energii-vX.Y.Z.zip` a soubor `.sha256`, jaké vytváří `.github/workflows/release.yml`. Instalátor s tokenem není potřebný pro běžné GitHub aktualizace, protože updater spouští migrace automaticky. Když se aktualizace nevejde do časového limitu PHP nebo nepůjde přepisovat FTP soubory, nasaďte release balíček ručně přes FTP a použijte dočasný nový `INSTALL_TOKEN` pro jednorázové provedení migrací. Po nasazení jej opět odeberte.
+
+**Bezpečnostní poznámka:** PHP 7.4 je výrobcem mimo bezpečnostní podporu. Pokud je to možné, vyberte na WEDOSu podporovanou verzi PHP; patch je kompatibilní také s PHP 8.x. AI odečty vyžadují internetový přístup na `api.openai.com` a funkční cURL/SSL.

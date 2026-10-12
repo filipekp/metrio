@@ -9,11 +9,14 @@ use FilesystemIterator;
 
 /** GitHub Release updater; use from CLI or authenticated admin POST only. */
 final class Updater {
-    private string $repo;
-    public function __construct(private string $root) {
+    /** @var string */
+    private $repo;
+    /** @var string */
+    private $root;
+    public function __construct(string $root) {
         $this->root=rtrim($root,'/');
         $this->repo=\config('GITHUB_REPOSITORY');
-        if(!preg_match('~^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$~D',$this->repo) || str_starts_with($this->repo,'YOUR_'))
+        if(!preg_match('~^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$~D',$this->repo) || strpos($this->repo,'YOUR_') === 0)
             throw new RuntimeException('Nastavte GITHUB_REPOSITORY v .env (např. uzivatel/evidence-energii).');
     }
     public function installed(): string { return trim((string)@file_get_contents($this->root.'/VERSION')); }
@@ -46,7 +49,7 @@ final class Updater {
         if(!$zip || !$checksum) throw new RuntimeException('Release neobsahuje ZIP a kontrolní součet vytvořený CI workflow.');
         foreach([$zip,$checksum] as $asset) {
             $url=(string)($asset['browser_download_url']??'');
-            if(!str_starts_with($url,'https://github.com/'.$this->repo.'/releases/download/'.rawurlencode($tag).'/'))
+            if(strpos($url,'https://github.com/'.$this->repo.'/releases/download/'.rawurlencode($tag).'/') !== 0)
                 throw new RuntimeException('Release obsahuje neočekávanou adresu balíčku.');
         }
         return ['tag'=>$tag,'version'=>ltrim($tag,'v'),'zip'=>$zip,'checksum'=>$checksum,
@@ -81,7 +84,7 @@ final class Updater {
                 if(!is_file($stage.'/'.$required)) throw new RuntimeException('Balíčku chybí soubor '.$required);
             if(trim((string)file_get_contents($stage.'/VERSION'))!==$release['tag']) throw new RuntimeException('VERSION neodpovídá tagu.');
             // Neprovádíme synchronizační mazání: konfigurace a nahrané fotografie zůstávají netknuté.
-            $paths=['public','src','migrations','bin','VERSION','README.md','.env.example'];
+            $paths=['public','src','migrations','bin','VERSION','README.md','.env.example','.htaccess'];
             foreach($paths as $path) {
                 if(is_dir($stage.'/'.$path)) {
                     foreach(new RecursiveIteratorIterator(new RecursiveDirectoryIterator($stage.'/'.$path,FilesystemIterator::SKIP_DOTS)) as $file) {
@@ -114,9 +117,9 @@ final class Updater {
         for($i=0;$i<$zip->numFiles;$i++) {
             $s=$zip->statIndex($i);$path=(string)$s['name'];$size=(int)$s['size'];$total+=$size;
             if($total>100*1024*1024 || $size>20*1024*1024) throw new RuntimeException('Balíček je příliš velký.');
-            if(str_contains($path,'\\') || str_contains($path,'..') || str_starts_with($path,'/') || str_contains($path,':') || str_contains($path,"\0"))
+            if(strpos($path,'\\') !== false || strpos($path,'..') !== false || strpos($path,'/') === 0 || strpos($path,':') !== false || strpos($path,"\0") !== false)
                 throw new RuntimeException('Nebezpečná cesta v ZIP.');
-            if(!preg_match('~^(?:public/|src/|migrations/|bin/|VERSION$|README\.md$|\.env\.example$)~D',$path))
+            if(!preg_match('~^(?:public/|src/|migrations/|bin/|VERSION$|README\.md$|\.env\.example$|\.htaccess$)~D',$path))
                 throw new RuntimeException('Neočekávaný soubor balíčku: '.$path);
             $opsys=0;$attributes=0;
             if($zip->getExternalAttributesIndex($i,$opsys,$attributes)) {
@@ -124,7 +127,7 @@ final class Updater {
                 if($mode===0120000) throw new RuntimeException('Symlinky nejsou povoleny.');
             }
             $dest=$stage.'/'.$path;
-            if(str_ends_with($path,'/')) { $this->ensure($dest);continue; }
+            if(substr($path,-1)==='/') { $this->ensure($dest);continue; }
             $this->ensure(dirname($dest));
             $stream=$zip->getStream($path);$out=fopen($dest,'wb');
             if(!$stream || !$out) throw new RuntimeException('Nejde rozbalit '.$path);

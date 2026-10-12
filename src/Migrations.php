@@ -5,7 +5,14 @@ use PDO;
 use RuntimeException;
 
 final class Migrations {
-    public function __construct(private PDO $db, private string $dir) {}
+    /** @var PDO */
+    private $db;
+    /** @var string */
+    private $dir;
+    public function __construct(PDO $db, string $dir) {
+        $this->db = $db;
+        $this->dir = $dir;
+    }
     public function status(): array {
         $this->db->exec('CREATE TABLE IF NOT EXISTS schema_migrations (filename VARCHAR(190) PRIMARY KEY, checksum CHAR(64) NOT NULL, applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4');
         $rows=$this->db->query('SELECT filename,checksum,applied_at FROM schema_migrations')->fetchAll(PDO::FETCH_ASSOC);

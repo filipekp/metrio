@@ -11,7 +11,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.2'
+          php-version: '7.4'
       - name: Lint PHP and test calculations
         run: |
           set -euo pipefail
@@ -19,6 +19,7 @@ jobs:
           php tests/consumption.php
           php tests/consumption_periods.php
           php tests/permissions.php
+          php tests/php74_compatibility.php
       - name: Create versioned package and SHA256
         env:
           TAG: ${{ github.ref_name }}
@@ -26,10 +27,10 @@ jobs:
           set -euo pipefail
           mkdir -p dist staging
           cp -a src bin public migrations staging/
-          cp README.md .env.example staging/
+          cp README.md .env.example .htaccess staging/
           printf '%s\n' "$TAG" > staging/VERSION
           cd staging
-          zip -qr "../dist/evidence-energii-${TAG}.zip" src bin public migrations README.md .env.example VERSION
+          zip -qr "../dist/evidence-energii-${TAG}.zip" src bin public migrations README.md .env.example .htaccess VERSION
           cd ../dist
           sha256sum "evidence-energii-${TAG}.zip" > "evidence-energii-${TAG}.zip.sha256"
       - name: Publish GitHub Release

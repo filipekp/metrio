@@ -33,7 +33,7 @@ final class Vision {
         $candidate=$parsed['value']??null;
         $value=null;
         if(is_string($candidate) || is_numeric($candidate)) {
-            try { $value=\valid_number((string)$candidate); } catch (\Throwable) { /* manual correction required */ }
+            try { $value=\valid_number((string)$candidate); } catch (\Throwable $e) { /* manual correction required */ }
         }
         return ['value'=>$value,'note'=>substr((string)($parsed['note']??'Návrh ověřte proti fotografii.'),0,250)];
     }
