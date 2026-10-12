@@ -43,6 +43,7 @@ jobs:
           php tests/permissions.php
           php tests/php73_compatibility.php
           php tests/migrations.php
+          bash .github/scripts/test-release-notes.sh
 
       - name: Determine release version
         id: version
@@ -97,6 +98,17 @@ jobs:
             sha256sum "evidence-energii-${TAG}.zip" > "evidence-energii-${TAG}.zip.sha256"
           )
 
+      - name: Generate release notes from commit messages
+        shell: bash
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          bash .github/scripts/generate-release-notes.sh "$TAG" "$TARGET_SHA" dist/release-notes.md
+          echo '--- Release notes ---'
+          cat dist/release-notes.md
+
       - name: Publish GitHub Release
         shell: bash
         env:
@@ -111,5 +123,5 @@ jobs:
             "dist/evidence-energii-${TAG}.zip" \
             "dist/evidence-energii-${TAG}.zip.sha256" \
             --target "$TARGET_SHA" \
-            --generate-notes \
+            --notes-file dist/release-notes.md \
             --title "Metrio ${TAG}"
