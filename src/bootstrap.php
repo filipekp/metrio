@@ -166,47 +166,6 @@ function ui_icon(string $name, string $extraClass=''): string {
     $content=$icons[$name] ?? $icons['overview'];
     return '<svg class="ui-icon'.($extraClass!==''?' '.html($extraClass):'').'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">'.$content.'</svg>';
 }
-function page_header(string $title,?array $user=null): void {
-    $app=html(config('APP_NAME','Metrio'));
-    $version=html(trim((string)@file_get_contents(APP_ROOT.'/VERSION')));
-    // Bootstrap se servíruje lokálně: aplikace funguje také při výpadku CDN a na WEDOSu bez sestavovacích nástrojů.
-    echo '<!doctype html><html lang="cs"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#111827"><meta name="color-scheme" content="light"><title>'.html($title).' · '.$app.'</title><link rel="stylesheet" href="assets/vendor/bootstrap.min.css"><link rel="stylesheet" href="assets/app.css?v=2"></head><body>';
-    $GLOBALS['metrio_authenticated_layout'] = $user !== null;
-    if (!$user) {
-        echo '<div class="auth-shell"><div class="auth-hero"><div class="brand-mark">'.ui_icon('bolt').'</div><h1>Metrio</h1><p>Chytrá evidence energií pro každý objekt.</p><div class="auth-orb auth-orb-one"></div><div class="auth-orb auth-orb-two"></div></div><main id="main-content" class="auth-content"><div class="auth-intro"><span class="eyebrow">Vítejte zpět</span><h2>'.html($title).'</h2><p class="muted">Přihlaste se ke svému přehledu měřidel a spotřeby.</p></div>'.flash();
-        return;
-    }
-    $current=(string)($_GET['page']??'dashboard');
-    $sections=[
-        'Hlavní nabídka'=>[
-            'dashboard'=>['Přehled','overview'],
-            'consumption'=>['Spotřeby a grafy','chart'],
-            'readings'=>['Odečty','readings'],
-            'meters'=>['Měřidla','meters'],
-            'units'=>['Byty a jednotky','units'],
-        ],
-    ];
-    if (is_admin($user)) {
-        $sections['Správa systému']=[
-            'buildings'=>['Objekty','building'],
-            'users'=>['Uživatelé','users'],
-            'update'=>['Aktualizace','refresh'],
-        ];
-    }
-    $initial=mb_safe_initial((string)$user['name']);
-    echo '<div class="layout-shell" id="layout-shell"><div class="sidebar-backdrop" id="sidebar-backdrop"></div><aside class="app-sidebar" id="app-sidebar" aria-label="Hlavní nabídka"><a href="?page=dashboard" class="sidebar-brand"><span class="brand-mark">'.ui_icon('bolt').'</span><span class="brand-text"><strong>Metrio</strong><small>Evidence energií</small></span></a><div class="sidebar-content">';
-    foreach ($sections as $heading=>$items) {
-        echo '<div class="nav-section"><p class="nav-section-title">'.html($heading).'</p><nav class="side-nav" aria-label="'.html($heading).'">';
-        foreach($items as $key=>$data) {
-            $active=$current===$key;
-            echo '<a href="?page='.html($key).'" class="side-link'.($active?' active':'').'"'.($active?' aria-current="page"':'').'>'.ui_icon($data[1]).'<span>'.html($data[0]).'</span>'.($active?'<span class="active-dot"></span>':'').'</a>';
-        }
-        echo '</nav></div>';
-    }
-    echo '</div><div class="sidebar-foot"><div class="sidebar-foot-kicker">SPRÁVA SPOTŘEBY</div><p>Mějte všechny energie pod kontrolou.</p><span class="sidebar-version">Verze '.$version.'</span></div></aside>';
-    echo '<div class="app-workspace"><header class="app-topbar"><div class="topbar-left"><button type="button" class="menu-toggle" id="menu-toggle" aria-label="Otevřít nebo zavřít nabídku" aria-controls="app-sidebar" aria-expanded="false">'.ui_icon('menu').'</button><span class="topbar-location">Evidence energií</span><span class="topbar-separator">/</span><span class="topbar-page">'.html($title).'</span></div><div class="topbar-right"><span class="topbar-role">'.html(role_label($user['role'])).'</span><span class="user-avatar" aria-hidden="true">'.html($initial).'</span><div class="topbar-user"><strong>'.html($user['name']).'</strong><small>'.html(role_label($user['role'])).'</small></div><form method="post" action="?page=logout" class="logout-form">'.post_token().'<button type="submit" class="logout-button" title="Odhlásit se" aria-label="Odhlásit se">'.ui_icon('logout').'</button></form></div></header>';
-    echo '<main id="main-content" class="workspace-content"><div class="page-heading"><div><span class="eyebrow">METRIO / '.html(mb_strtoupper_fallback($title)).'</span><h1>'.html($title).'</h1><p class="page-subtitle">'.html(page_description($current)).'</p></div><div class="page-heading-aside"><span class="header-date">'.ui_icon('calendar').' '.html(date('d. m. Y')).'</span></div></div>'.flash();
-}
 function page_description(string $page): string {
     $labels=[
         'dashboard'=>'Vše důležité o spotřebě a odečtech na jednom místě.',
@@ -230,14 +189,6 @@ function mb_safe_initial(string $name): string {
 function mb_strtoupper_fallback(string $text): string {
     return function_exists('mb_strtoupper')?mb_strtoupper($text,'UTF-8'):strtoupper($text);
 }
-function page_footer(): void {
-    if (!empty($GLOBALS['metrio_authenticated_layout'])) {
-        echo '</main><footer class="app-footer"><span>© '.date('Y').' Metrio · Evidence energií · <a href="https://www.filipek-czech.cz" target="_blank">Pavel Filípek</a></span><span>Postaveno pro přehled o každé spotřebě</span></footer></div></div>';
-    } else {
-        echo '</main></div>';
-    }
-    echo '<script src="assets/app.js?v=2" defer></script></body></html>';
-}
 function form_select(string $name,array $options,$selected=null,bool $optional=false): string {
     $out='<select name="'.html($name).'">'; if($optional) $out.='<option value="">— bez přiřazení —</option>';
     foreach($options as $val=>$label) $out.='<option value="'.html($val).'"'.((string)$selected===(string)$val?' selected':'').'>'.html($label).'</option>';
@@ -254,3 +205,6 @@ function fmt(float $n): string { return number_format($n, 3, ',', ' '); }
 function csv_cell(string $value): string {
     return preg_match('/^[=+\-@\t\r]/u', $value) ? "'".$value : $value;
 }
+
+// Společné layouty jsou mimo aplikační logiku a načítají se jednou.
+require_once __DIR__ . '/View/Layout.php';

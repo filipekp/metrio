@@ -153,3 +153,10 @@ Kontrola po instalaci: `php tests/php73_compatibility.php` (v GitHub Actions se 
 ## Uspořádání projektu
 
 Nová modulární struktura projektu je popsaná v [ARCHITECTURE.md](ARCHITECTURE.md). HTTP routy, controllery a POST akce jsou v `src/Http` a `src/Modules`, jednotlivé HTML šablony v `templates/pages`. Podrobnosti v dokumentaci.
+
+### Společná hlavička, menu a patička
+
+Rozložení všech přihlášených obrazovek je ve `templates/layouts/` a `templates/partials/`.
+Pro další stránku stačí přidat modul a `templates/pages/novastranka.php` s vlastním obsahem.
+Navigace a její viditelnost podle rolí se nastavují v `src/View/Layout.php`.
+Přihlášení a webový instalátor používají samostatný layout bez postranního menu.

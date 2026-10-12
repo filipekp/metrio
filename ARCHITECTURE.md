@@ -10,6 +10,9 @@ src/Http/PostHandler.php          POST dispatcher, CSRF a jednotné zpracování
 src/Repositories/AccessScopes.php načítání jednotek a měřidel dle práv uživatele
 src/Services/ReadingService.php   ověřování a ukládání odečtů, přístup k fotkám
 src/View/ConsumptionChart.php     vykreslení grafu spotřeby
+src/View/Layout.php              společné vykreslení, konfigurace navigace a kompatibilita s page_header()
+templates/layouts/               začátek/konec HTML dokumentu, dashboard i login
+templates/partials/              znovupoužívaná hlavička, menu, nadpis stránky a patička
 src/Modules/Dashboard/            přehledová data
 src/Modules/Buildings/            správa objektů
 src/Modules/Units/                správa jednotek
@@ -20,7 +23,7 @@ src/Modules/Consumption/          spotřeby a CSV export
 src/Modules/Updates/              GitHub release updater
 src/Modules/*/actions.php         POST akce modulu (kde jsou potřeba)
 src/Modules/*/<route>.php         GET controller: načtení dat pro stránku
-templates/pages/*.php             HTML výstup každé stránky, bez změny URL
+templates/pages/*.php             POUZE obsah jednotlivé stránky, bez hlavičky/menu/patičky
 ```
 
 ## Přidání nové stránky
@@ -52,3 +55,21 @@ php tests/templates.php
 ```
 
 Nové migrace nejsou potřeba. Po nasazení otestujte přihlášení, omezení práv, uložení odečtu, fotografie, spotřeby a aktualizaci z GitHubu.
+
+## Společné šablony a navigace
+
+`src/View/Layout.php` poskytuje `page_header()` a `page_footer()`, které volá
+`src/Http/Router.php` pro všechny běžné stránky a `public/install.php` pro instalátor.
+`templates/layouts/document-start.php` a `document-end.php` obsahují společný HTML
+dokument a assety. Přihlášení a instalátor používají samostatné `auth-open.php`
+a `auth-close.php`, aby nezobrazovaly dashboardové menu.
+
+Přihlášený uživatel používá `app-open.php` / `app-close.php` a části
+`templates/partials/sidebar.php`, `topbar.php`, `page-heading.php`, `footer.php`.
+Položky menu a pravidla zobrazení rolím upravujte na jednom místě ve
+`metrio_navigation()` v `src/View/Layout.php`. Oprávnění na serveru zůstávají
+v controllerech a POST handleru; skrytí menu samo o sobě přístup nechrání.
+
+Nové podstránky **nesmějí** generovat `<html>`, `<body>`, sidebar ani layoutové
+`<main>`. V `templates/pages/` je pouze obsah stránky a router zajistí zbytek.
+`php tests/layout.php` kontroluje, že se společné části vykreslí jednou a podle rolí.

@@ -45,6 +45,7 @@ jobs:
           php tests/migrations.php
           php tests/module_structure.php
           php tests/templates.php
+          php tests/layout.php
           bash .github/scripts/test-release-notes.sh
 
       - name: Determine release version
