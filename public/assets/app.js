@@ -24,6 +24,7 @@
   var meter = form.querySelector('[name="meter_id"]');
   var date = form.querySelector('[name="reading_date"]');
   var value = form.querySelector('[name="value"]');
+  var low = form.querySelector('[name="value_low"]');
   var msg = document.getElementById('reading-limits-message');
   var limits = null;
   function check() {
@@ -33,6 +34,16 @@
        (limits.maximum !== null && number > limits.maximum)))));
     value.setCustomValidity(invalid ? 'Stav neodpovídá sousedním odečtům nebo je datum již obsazeno.' : '');
     if (limits && invalid) msg.textContent = value.validationMessage;
+    if (low) {
+      var enteredLow = low.value.trim();
+      var lowNumber = Number(enteredLow.replace(',', '.'));
+      var boundsLow = limits && limits.low;
+      var lowInvalid = !!(enteredLow && boundsLow && (!isFinite(lowNumber) ||
+        (boundsLow.minimum !== null && lowNumber < boundsLow.minimum) ||
+        (boundsLow.maximum !== null && lowNumber > boundsLow.maximum)));
+      low.setCustomValidity(lowInvalid ? 'Stav NT neodpovídá předchozímu nebo následujícímu odečtu.' : '');
+      if (lowInvalid) msg.textContent = low.validationMessage;
+    }
   }
   function reload() {
     limits = null;
@@ -53,5 +64,37 @@
   meter.addEventListener('change', reload);
   date.addEventListener('change', reload);
   value.addEventListener('input', check);
+  if (low) low.addEventListener('input', check);
   reload();
+})();
+
+
+// Zobrazení NT pouze pro elektroměry; validace na serveru zůstává rozhodující.
+(function () {
+  'use strict';
+
+  var list = document.getElementById('electric-meter-ids');
+  if (!list) return;
+
+  var electricIds;
+  try {
+    electricIds = JSON.parse(list.textContent).map(String);
+  } catch (error) {
+    return;
+  }
+
+  var form = document.getElementById('reading-form');
+  var select = form ? form.querySelector('[name="meter_id"]') : document.querySelector('[name="confirmed_meter_id"]');
+  var field = document.getElementById(form ? 'reading-low-tariff-field' : 'photo-low-tariff-field');
+  if (!select || !field) return;
+
+  function update() {
+    var visible = electricIds.indexOf(select.value) !== -1;
+    field.hidden = !visible;
+    var input = field.querySelector('input');
+    if (!visible && input) input.value = '';
+  }
+
+  select.addEventListener('change', update);
+  update();
 })();

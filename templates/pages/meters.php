@@ -42,7 +42,7 @@ if(is_admin($u)) {
     echo '<label>Měřicí místo '.form_select('meter_id',$mopts).'</label>';
     echo '<label>Datum výměny <input type="date" name="replacement_date" max="'.date('Y-m-d').'" value="'.date('Y-m-d').'" required></label>';
     echo '<label>Konečný stav starého <input type="text" name="old_final" inputmode="decimal" placeholder="12540,00" required></label>';
-    echo '<label>Počáteční stav nového <input type="text" name="new_initial" inputmode="decimal" placeholder="0,00" required></label>';
+    echo '<label>Počáteční stav nového <input type="text" name="new_initial" inputmode="decimal" placeholder="0,00" required></label><label>Konečný stav starého NT (elektřina, nepovinné) <input name="old_final_low" inputmode="decimal" placeholder="např. 80,00"></label><label>Počáteční stav nového NT (elektřina, nepovinné) <input name="new_initial_low" inputmode="decimal" placeholder="např. 0,00"></label>';
     echo '<label>Výrobní číslo nového <input name="new_serial" required maxlength="160"></label>';
     echo '<label>EAN / číslo čárového kódu nového <input name="new_ean" inputmode="numeric" maxlength="40"></label>';
     echo '<label>Poznámka <input name="note" maxlength="255" placeholder="Výměna / plombování"></label>';
@@ -52,8 +52,8 @@ if(is_admin($u)) {
         $list=$devicesByMeter[(int)$m['id']]??[];
         if(!$list) continue;
         echo '<details><summary>'.html(meter_option_label($m,$labels)).' ('.count($list).' zařízení)</summary>';
-        echo '<table><thead><tr><th>Výrobní číslo</th><th>EAN</th><th>Od</th><th>Do</th><th>Počáteční stav</th><th>Konečný stav</th></tr></thead><tbody>';
-        foreach($list as $d) echo '<tr><td>'.html($d['serial']).'</td><td>'.html($d['ean']??'').'</td><td>'.html($d['installed_on']==='1900-01-01'?'Historické zařízení':$d['installed_on']).'</td><td>'.html($d['removed_on']??'Používá se').'</td><td>'.html($d['opening_value']??'—').'</td><td>'.html($d['closing_value']??'—').'</td></tr>';
+        echo '<table><thead><tr><th>Výrobní číslo</th><th>EAN</th><th>Od</th><th>Do</th><th>Počáteční stav VT</th><th>Konečný stav VT</th><th>Počáteční NT</th><th>Konečný NT</th></tr></thead><tbody>';
+        foreach($list as $d) echo '<tr><td>'.html($d['serial']).'</td><td>'.html($d['ean']??'').'</td><td>'.html($d['installed_on']==='1900-01-01'?'Historické zařízení':$d['installed_on']).'</td><td>'.html($d['removed_on']??'Používá se').'</td><td>'.html($d['opening_value']??'—').'</td><td>'.html($d['closing_value']??'—').'</td><td>'.html($d['opening_value_low']??'—').'</td><td>'.html($d['closing_value_low']??'—').'</td></tr>';
         echo '</tbody></table></details>';
     }
     echo '</section>';
