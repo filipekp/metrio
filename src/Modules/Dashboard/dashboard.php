@@ -20,6 +20,12 @@ if ($unitIds && $meterIds) {
     } catch(Throwable $e) { error_log('Dashboard consumption summary: '.$e->getMessage()); }
 }
 $overviewTypes=['electricity'=>['Elektřina','bolt','kWh'],'gas'=>['Plyn','flame','m³'],'cold_water'=>['Studená voda','water','m³'],'hot_water'=>['Teplá voda','water','m³']];
+// Omezit komodity na měřidla dostupná přihlášenému uživateli.
+$linkedTypes = [];
+foreach ($meters as $meter) {
+    $linkedTypes[(string) $meter['type']] = true;
+}
+$overviewTypes = array_intersect_key($overviewTypes, $linkedTypes);
 $currentPeriod=null;
 if ($report) foreach($report['periods'] as $period) $currentPeriod=$period;
 return compact('units','meters','n','unitIds','readings','report','overviewTypes','currentPeriod');

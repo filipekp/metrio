@@ -8,7 +8,8 @@ echo '<section class="card stat-card"><span class="stat-icon stat-violet">'.ui_i
 echo '<section class="card stat-card"><span class="stat-icon stat-cyan">'.ui_icon('readings').'</span><small>Poslední odečty</small><strong>'.count($readings).'</strong><span class="stat-note">Až 6 posledních záznamů</span></section>';
 echo '<section class="card stat-card"><span class="stat-icon stat-green">'.ui_icon('shield').'</span><small>Oprávnění</small><strong class="stat-role">'.html(role_label($u['role'])).'</strong><span class="stat-note">Vaše aktuální role</span></section></div>';
 
-echo '<section class="card dashboard-energy"><div class="section-head"><div><span class="eyebrow">AKTUÁLNÍ SPOTŘEBA</span><h2>Spotřeba za aktuální měsíc</h2><p class="muted">Součet dostupných jednotek. Neúplná data jsou označena.</p></div><a href="?page=consumption" class="text-action">Podrobné grafy '.ui_icon('arrow').'</a></div><div class="energy-tiles">';
+if ($overviewTypes) {
+    echo '<section class="card dashboard-energy"><div class="section-head"><div><span class="eyebrow">AKTUÁLNÍ SPOTŘEBA</span><h2>Spotřeba za aktuální měsíc</h2><p class="muted">Součet dostupných jednotek. Neúplná data jsou označena.</p></div><a href="?page=consumption" class="text-action">Podrobné grafy '.ui_icon('arrow').'</a></div><div class="energy-tiles" data-count="'.count($overviewTypes).'">';
 foreach($overviewTypes as $type=>$def) {
     $total=0.0;$found=false;$estimated=false;
     if($currentPeriod) foreach($unitIds as $unitId) {
@@ -19,7 +20,8 @@ foreach($overviewTypes as $type=>$def) {
     }
     echo '<div class="energy-tile"><span class="energy-icon energy-'.html($type).'">'.ui_icon($def[1]).'</span><span class="energy-label">'.html($def[0]).'</span><div class="energy-reading">'.($found?html(fmt($total)):'—').' <small>'.html($def[2]).'</small></div><span class="energy-foot">'.($found?($estimated?'Odhad dle odečtů':'Dle odečtů'):'Zatím bez údajů').'</span></div>';
 }
-echo '</div></section>';
+    echo '</div></section>';
+}
 echo '<div class="dashboard-columns"><section class="card dashboard-trend"><div class="section-head"><div><span class="eyebrow">VÝVOJ SPOTŘEBY</span><h2>Posledních šest měsíců</h2></div></div>';
 if($report && $unitIds) {
     $first=$unitIds[0]; $shown=null;
