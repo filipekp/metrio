@@ -79,7 +79,13 @@ function manages_building(array $user, int $buildingId): bool {
     return (bool)one('SELECT 1 FROM building_managers WHERE user_id=? AND building_id=?', [(int)$user['id'], $buildingId]);
 }
 
-function csrf(): string { start_session(); return $_SESSION['csrf'] ??= bin2hex(random_bytes(24)); }
+function csrf(): string {
+    start_session();
+    if (!isset($_SESSION['csrf'])) {
+        $_SESSION['csrf'] = bin2hex(random_bytes(24));
+    }
+    return (string) $_SESSION['csrf'];
+}
 function check_csrf(): void {
     start_session();
     if (!hash_equals(csrf(), (string)($_POST['_csrf']??''))) { http_response_code(419); exit('Neplatný CSRF token'); }

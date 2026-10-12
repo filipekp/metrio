@@ -1,41 +1,114 @@
-name: Build release
+name: Build and publish Metrio release
+
 on:
   push:
-    tags: ['v*.*.*']
+    branches:
+      - master
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
 permissions:
   contents: write
+
+# Pouze jedno vydání najednou – verze se tak nepřetahují při rychlých pushích.
+concurrency:
+  group: metrio-release
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: shivammathur/setup-php@v2
+      - name: Checkout including tags
+        uses: actions/checkout@v4
         with:
-          php-version: '7.4'
-      - name: Lint PHP and test calculations
+          fetch-depth: 0
+
+      - name: PHP 7.3
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '7.3'
+          extensions: mbstring, pdo_mysql, fileinfo, curl, zip
+          coverage: none
+
+      - name: Check PHP syntax and tests under PHP 7.3
+        shell: bash
         run: |
           set -euo pipefail
+          php -v
           find src bin public tests -type f -name '*.php' -print0 | xargs -0 -n1 php -l
           php tests/consumption.php
           php tests/consumption_periods.php
           php tests/permissions.php
-          php tests/php74_compatibility.php
-      - name: Create versioned package and SHA256
+          php tests/php73_compatibility.php
+
+      - name: Determine release version
+        id: version
+        shell: bash
         env:
-          TAG: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$REF_TYPE" == 'tag' ]]; then
+            if [[ ! "$REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo 'Tag musí mít tvar vMAJOR.MINOR.PATCH.' >&2
+              exit 1
+            fi
+            TAG="$REF_NAME"
+          else
+            # Při push do master se vždy zvýší PATCH část nejvyššího stabilního tagu.
+            # VERSION slouží jako dolní hranice pro projekt bez předchozího releasu.
+            BASE="$(tr -d '\r\n' < VERSION)"
+            if [[ ! "$BASE" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-dev)?$ ]]; then
+              echo 'VERSION musí mít tvar vX.Y.Z nebo vX.Y.Z-dev.' >&2
+              exit 1
+            fi
+            BASE="${BASE%-dev}"
+            git fetch --force --tags origin
+            LATEST="$(git tag -l | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1 || true)"
+            if [[ -n "$LATEST" && "$(printf '%s\n' "$BASE" "$LATEST" | sort -V | tail -n 1)" == "$LATEST" ]]; then
+              BASE="$LATEST"
+            fi
+            IFS='.' read -r MAJOR MINOR PATCH <<< "${BASE#v}"
+            TAG="v${MAJOR}.${MINOR}.$((10#$PATCH + 1))"
+          fi
+          printf 'New version: %s\n' "$TAG"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Create versioned release ZIP and SHA256
+        shell: bash
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
           set -euo pipefail
           mkdir -p dist staging
           cp -a src bin public migrations staging/
           cp README.md .env.example .htaccess staging/
           printf '%s\n' "$TAG" > staging/VERSION
-          cd staging
-          zip -qr "../dist/evidence-energii-${TAG}.zip" src bin public migrations README.md .env.example .htaccess VERSION
-          cd ../dist
-          sha256sum "evidence-energii-${TAG}.zip" > "evidence-energii-${TAG}.zip.sha256"
+          (
+            cd staging
+            zip -qr "../dist/evidence-energii-${TAG}.zip" src bin public migrations README.md .env.example .htaccess VERSION
+          )
+          (
+            cd dist
+            sha256sum "evidence-energii-${TAG}.zip" > "evidence-energii-${TAG}.zip.sha256"
+          )
+
       - name: Publish GitHub Release
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ steps.version.outputs.tag }}
+          TARGET_SHA: ${{ github.sha }}
         run: |
-          gh release create "$TAG" "dist/evidence-energii-${TAG}.zip" "dist/evidence-energii-${TAG}.zip.sha256" --verify-tag --generate-notes --title "Evidence energií ${TAG}"
+          set -euo pipefail
+          # --target založí tag přímo na commit z master, pokud ještě neexistuje.
+          # Není potřeba pushovat tag ručně. GitHub Release obsahuje přesný ZIP.
+          gh release create "$TAG" \
+            "dist/evidence-energii-${TAG}.zip" \
+            "dist/evidence-energii-${TAG}.zip.sha256" \
+            --target "$TARGET_SHA" \
+            --generate-notes \
+            --title "Metrio ${TAG}"

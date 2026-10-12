@@ -4,7 +4,7 @@ První funkční verze systému pro evidenci elektřiny, plynu, studené vody, t
 
 ## Požadavky
 
-- PHP **7.4+**, `pdo_mysql`, `fileinfo`, `curl` a `zip` (rozšíření cURL a ZipArchive nutná pro AI / aktualizace).
+- PHP **7.3+**, `pdo_mysql`, `fileinfo`, `curl` a `zip` (rozšíření cURL a ZipArchive nutná pro AI / aktualizace).
 - MariaDB 10.6+ (testovací Docker Compose používá MariaDB 11.4).
 - Apache/Nginx se směrováním na `public/`; na WEDOS Apache použijte kořenový `.htaccess` a postup níže. Privátní soubory nesmí být veřejně přístupné.
 - HTTPS pro produkci a používání kamery v mobilním prohlížeči.
@@ -67,12 +67,14 @@ Důležité: fotografie může obsahovat identifikátory a adresy; pokud zapnete
 
 ## GitHub vydání a aktualizace
 
-Projekt má `.github/workflows/release.yml`: při push tagu `vMAJOR.MINOR.PATCH` provede PHP lint, testy a vytvoří GitHub Release s přílohami:
+Projekt má `.github/workflows/release.yml`: při každém pushnutí do větve `master` automaticky určí další opravnou verzi `vMAJOR.MINOR.PATCH`, provede lint a testy přímo na **PHP 7.3** a vytvoří GitHub Release s přílohami:
 
 - `evidence-energii-v1.0.0.zip`
 - `evidence-energii-v1.0.0.zip.sha256`
 
-Příkaz `git tag v1.0.0 && git push origin v1.0.0` vytvoří release v repozitáři s povolenými GitHub Actions.
+Stačí `git push origin master`. Workflow automaticky zvýší číslo PATCH oproti nejvyššímu stabilnímu tagu a základu uvedenému ve `VERSION` (např. z `v0.1.3-dev` vytvoří nejprve `v0.1.4`). Lze také ručně pushnout tag `v1.0.0` příkazem `git tag v1.0.0 && git push origin v1.0.0`; workflow podporuje i ruční spuštění přes Actions → Build and publish Metrio release → Run workflow.
+
+**GitHub nastavení:** v repozitáři zkontrolujte Actions → General → Workflow permissions (token musí mít právo zapisovat `contents`, aby vytvořil Release). Workflow musí být committnuté do výchozí větve `master`. Výsledek a případné chyby najdete v záložce Actions. Automatický release nevznikne, pokud selže syntaxe nebo testy. Akce používá `GITHUB_TOKEN` a nevytváří další workflow smyčku.
 
 Na serveru nastavte `GITHUB_REPOSITORY=uzivatel/repo`. Skript `php bin/deploy.php --check` zjistí nejnovější stabilní Release. `php bin/deploy.php --install --yes` jej stáhne a nasadí; totéž lze přes administrátorskou stránku **Aktualizace**.
 
@@ -101,15 +103,15 @@ find src bin public tests -type f -name '*.php' -exec php -l {} \;
 Připravená testovací sada ověřuje poměrné odhady, odhady s omezením do 45 dnů, kalendářní dny, jednoduché odečtení, koeficient, víceúrovňová měřidla, záporný zbytek a chybějící odečet. Integrační testy MariaDB vyžadují běžící DB a nejsou zahrnuty do této samostatné distribuce.
 
 
-## WEDOS webhosting (PHP 7.4, bez Dockeru a SSH) – od verze 0.1.3
+## WEDOS webhosting (PHP 7.3, bez Dockeru a SSH) – od verze 0.1.4
 
-Tato verze je napsaná pro **PHP 7.4+** a používá PDO MySQL, session, fileinfo.
+Tato verze je napsaná pro **PHP 7.3+** a používá PDO MySQL, session, fileinfo.
 Pro AI a aktualizace přes GitHub potřebujete cURL; pro aktualizace také ZipArchive a povolení zápisu do adresáře projektu.
 Webhosting WEDOS má typicky veřejné adresáře `www` a `www/domains/nazev-domeny.cz`; nemůžete automaticky předpokládat možnost změnit document root na `/public`.
 
 **Bezpečné nasazení přes FTP:**
 
-1. V administraci WEDOS nastavte PHP 7.4 nebo novější (doporučuje se podporovaná 8.2+).
+1. V administraci WEDOS nastavte PHP 7.3 nebo novější (doporučuje se podporovaná 8.2+).
 2. Do **kořene konkrétního webu** např. `www/domains/metrio.example.cz/` nahrajte celý projekt (`.htaccess`, `public/`, `src/`, `migrations/`, `bin/`, `VERSION`, `storage/`). **Nenahrazujte globální** `www/.htaccess` WEDOSu. Složky `storage/photos` a `storage/deploy-backups` musí být zapisovatelné pro PHP.
 3. Vytvořte `.env` podle `.env.example`; nastavte databázový host/port/jméno/uživatele přesně podle WEDOS administrace (nikoli Docker hostname `mariadb`), HTTPS URL a unikátní `INSTALL_TOKEN` tvořený **64 hexadecimálními znaky** (např. výstup `openssl rand -hex 32`). Nevkládejte jej do GitHubu.
 4. Otevřete `https://metrio.example.cz/install.php`, vyplňte instalační klíč a klikněte na **Spustit migrace**. Poté na stejné stránce vytvořte prvního administrátora.
@@ -120,4 +122,4 @@ Kořenový `.htaccess` bezpečně směruje `/` a `/index.php` do `public/index.p
 
 **Aktualizace:** po nastavení `GITHUB_REPOSITORY` může administrátor použít stránku **Aktualizace**; nasazení musí obsahovat GitHub Release asset `evidence-energii-vX.Y.Z.zip` a soubor `.sha256`, jaké vytváří `.github/workflows/release.yml`. Instalátor s tokenem není potřebný pro běžné GitHub aktualizace, protože updater spouští migrace automaticky. Když se aktualizace nevejde do časového limitu PHP nebo nepůjde přepisovat FTP soubory, nasaďte release balíček ručně přes FTP a použijte dočasný nový `INSTALL_TOKEN` pro jednorázové provedení migrací. Po nasazení jej opět odeberte.
 
-**Bezpečnostní poznámka:** PHP 7.4 je výrobcem mimo bezpečnostní podporu. Pokud je to možné, vyberte na WEDOSu podporovanou verzi PHP; patch je kompatibilní také s PHP 8.x. AI odečty vyžadují internetový přístup na `api.openai.com` a funkční cURL/SSL.
+**Bezpečnostní poznámka:** PHP 7.3 je výrobcem mimo bezpečnostní podporu. Pokud je to možné, vyberte na WEDOSu podporovanou verzi PHP; patch je kompatibilní také s PHP 8.x. AI odečty vyžadují internetový přístup na `api.openai.com` a funkční cURL/SSL.
