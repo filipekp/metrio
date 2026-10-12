@@ -83,6 +83,11 @@ final class Updater {
             foreach(['public/index.php','src/bootstrap.php','migrations/001_initial.sql','bin/migrate.php','VERSION'] as $required)
                 if(!is_file($stage.'/'.$required)) throw new RuntimeException('Balíčku chybí soubor '.$required);
             if(trim((string)file_get_contents($stage.'/VERSION'))!==$release['tag']) throw new RuntimeException('VERSION neodpovídá tagu.');
+            // Migracni runner nacteme ze stavajici aplikace jeste pred
+            // prepsanim PHP souboru. I pri aktualizaci na starsi release,
+            // ktery obsahoval chybnou kontrolu checksumu, zustane tento beh
+            // aktualizace kompatibilni s uz provedenymi migracemi.
+            $migrationRunner=new Migrations(\db(),$this->root.'/migrations');
             // Neprovádíme synchronizační mazání: konfigurace a nahrané fotografie zůstávají netknuté.
             $paths=['public','src','migrations','bin','VERSION','README.md','.env.example','.htaccess'];
             foreach($paths as $path) {
@@ -94,10 +99,18 @@ final class Updater {
                     }
                 } elseif(is_file($stage.'/'.$path)) $this->copyWithBackup($stage.'/'.$path,$path,$backup,$changed,$created);
             }
+            // Již provedené migrace (i s jiným součtem) ignorujeme.
+            // Rozdílné soubory si necháme zaznamenané pro diagnostiku.
+            $skipped=[];
+            foreach($migrationRunner->status() as $row) {
+                if($row['status']==='CHANGED') $skipped[]=$row['name'];
+            }
             // DDL migrace mohou být v MariaDB nevratné: před produkční aktualizací zálohujte také DB.
-            $migrated=(new Migrations(\db(),$this->root.'/migrations'))->run();
-            file_put_contents($run.'/result.json',json_encode(['tag'=>$release['tag'],'migrated'=>$migrated,'time'=>date(DATE_ATOM)],JSON_PRETTY_PRINT));
-            return ['status'=>'updated','tag'=>$release['tag'],'migrations'=>$migrated,'backup'=>$backup];
+            $migrated=$migrationRunner->run();
+            file_put_contents($run.'/result.json',json_encode(['tag'=>$release['tag'],'migrated'=>$migrated,
+                'skipped_modified'=>$skipped,'time'=>date(DATE_ATOM)],JSON_PRETTY_PRINT));
+            return ['status'=>'updated','tag'=>$release['tag'],'migrations'=>$migrated,
+                'skipped_modified'=>$skipped,'backup'=>$backup];
         } catch (\Throwable $e) {
             // Vrátíme soubory; databázové migrace z důvodu DDL mohou vyžadovat obnovu ze zálohy.
             foreach(array_reverse($created) as $rel) @unlink($this->root.'/'.$rel);

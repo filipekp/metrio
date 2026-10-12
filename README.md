@@ -123,3 +123,17 @@ Kořenový `.htaccess` bezpečně směruje `/` a `/index.php` do `public/index.p
 **Aktualizace:** po nastavení `GITHUB_REPOSITORY` může administrátor použít stránku **Aktualizace**; nasazení musí obsahovat GitHub Release asset `evidence-energii-vX.Y.Z.zip` a soubor `.sha256`, jaké vytváří `.github/workflows/release.yml`. Instalátor s tokenem není potřebný pro běžné GitHub aktualizace, protože updater spouští migrace automaticky. Když se aktualizace nevejde do časového limitu PHP nebo nepůjde přepisovat FTP soubory, nasaďte release balíček ručně přes FTP a použijte dočasný nový `INSTALL_TOKEN` pro jednorázové provedení migrací. Po nasazení jej opět odeberte.
 
 **Bezpečnostní poznámka:** PHP 7.3 je výrobcem mimo bezpečnostní podporu. Pokud je to možné, vyberte na WEDOSu podporovanou verzi PHP; patch je kompatibilní také s PHP 8.x. AI odečty vyžadují internetový přístup na `api.openai.com` a funkční cURL/SSL.
+
+
+### Již provedené migrace po aktualizaci (od opravy v0.1.5)
+
+Pokud soubor migrace (např. `002_object_managers.sql`) v novém releasu
+nesouhlasí se součtem uloženým v `schema_migrations`, systém ji **znovu
+nespustí a aktualizaci nezastaví**. Při kontrole `php bin/migrate.php --status`
+zůstane rozdíl dohledatelný; při `php bin/migrate.php` bude označen jako
+`PRESKOCENO (jiz provedena)`. Nové migrace se provedou obvyklým způsobem.
+**Skutečné změny schématu se musí vždy zapisovat do nového SQL souboru
+(např. `003_...sql`), nikoliv dodatečnou úpravou migrace 002.**
+
+Před aktualizací si zazálohujte databázi – provedené DDL příkazy se v MariaDB
+nemusí dát automaticky vrátit zpět.

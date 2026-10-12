@@ -24,14 +24,23 @@ final class Migrations {
         }
         return $result;
     }
+    /**
+     * Zaznam v schema_migrations znamena, ze migrace jiz probehla.
+     * Pozdejsi zmena SQL souboru se muze zobrazit v --status, ale nesmi
+     * znovu spustit migraci ani zablokovat aktualizaci. Pro skutecne zmeny
+     * schematu je nutne vytvorit novou migraci s novym cislem.
+     */
     public function run(): array {
-        $status=$this->status();
-        foreach ($status as $row) if($row['status']==='CHANGED') throw new RuntimeException('Již aplikovaná migrace byla upravena: '.$row['name']);
         $lock=fopen(sys_get_temp_dir().'/energie_migration_'.sha1($this->dir).'.lock','c');
         if (!$lock || !flock($lock,LOCK_EX|LOCK_NB)) throw new RuntimeException('Migrace již probíhají.');
         $applied=[];
         try {
+            // Stav overujeme az pod zamkem, aby soubezne spusteni neprovedlo
+            // stejnou cekajici migraci dvakrat.
+            $status=$this->status();
             foreach($status as $row) {
+                // 'applied' i 'CHANGED' jsou jiz zapsane v schema_migrations.
+                // Jejich SQL uz znovu nikdy nespoustime.
                 if($row['status']!=='pending') continue;
                 $path=$this->dir.'/'.$row['name']; $data=file_get_contents($path);
                 if($data===false) throw new RuntimeException('Nelze číst migraci: '.$path);
