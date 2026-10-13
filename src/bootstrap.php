@@ -170,6 +170,7 @@ function page_description(string $page): string {
     $labels=[
         'dashboard'=>'Vše důležité o spotřebě a odečtech na jednom místě.',
         'consumption'=>'Porovnávejte spotřebu jednotlivých energií v čase.',
+        'reading_overview'=>'Stavy měřidel a spotřeba mezi skutečnými dny odečtů.',
         'readings'=>'Přidávejte stavy měřidel ručně nebo pomocí fotografie.',
         'meters'=>'Přehled hlavních i podružných měřidel a jejich nastavení.',
         'units'=>'Spravované byty, jednotky a jejich přiřazení.',
