@@ -57,9 +57,16 @@ foreach ($report['rows'] as $row) {
     $byDate[$row['date']] = $row['cells'];
 }
 expect_overview(abs($byDate['2026-01-05'][1]['usage'] - 26.0) < 0.0001, 'VT + NT a koeficient.');
+expect_overview(abs($byDate['2026-01-05'][1]['usage_high'] - 20.0) < 0.0001, 'VT a koeficient.');
+expect_overview(abs($byDate['2026-01-05'][1]['usage_low'] - 6.0) < 0.0001, 'NT a koeficient.');
 expect_overview(abs($byDate['2026-01-10'][1]['usage'] - 24.0) < 0.0001, 'Výměna: dopočet starého zařízení.');
+expect_overview(abs($byDate['2026-01-10'][1]['usage_high'] - 20.0) < 0.0001, 'Výměna: VT starého zařízení.');
+expect_overview(abs($byDate['2026-01-10'][1]['usage_low'] - 4.0) < 0.0001, 'Výměna: NT starého zařízení.');
 expect_overview(abs($byDate['2026-01-15'][1]['usage'] - 24.0) < 0.0001, 'Výměna: nové zařízení.');
+expect_overview(abs($byDate['2026-01-15'][1]['usage_high'] - 20.0) < 0.0001, 'Výměna: VT nového zařízení.');
+expect_overview(abs($byDate['2026-01-15'][1]['usage_low'] - 4.0) < 0.0001, 'Výměna: NT nového zařízení.');
 expect_overview(abs($byDate['2026-01-15'][2]['usage'] - 5.0) < 0.0001, 'Podružné měřidlo.');
+expect_overview($byDate['2026-01-15'][2]['usage_low'] === null, 'Bez NT zůstane prázdná hodnota.');
 expect_overview(!isset($byDate['2026-01-05'][2]), 'Bez odečtu nesmí vzniknout buňka.');
 
 $noBaseline = ReadingOverview::build(

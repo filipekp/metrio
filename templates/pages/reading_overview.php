@@ -143,7 +143,16 @@ declare(strict_types=1);
                                         <span class="muted" title="<?= html($cell['reason']) ?>">—</span>
                                         <small><?= html($cell['reason']) ?></small>
                                     <?php else: ?>
-                                        <strong><?= html(fmt((float) $cell['usage'])) ?></strong>
+                                        <?php if ($energy === 'electricity'): ?>
+                                            <strong>VT: <?= html(fmt((float) $cell['usage_high'])) ?></strong>
+                                            <small>
+                                                NT:
+                                                <?= $cell['usage_low'] === null ? '—' : html(fmt((float) $cell['usage_low'])) ?>
+                                            </small>
+                                            <small>Celkem: <?= html(fmt((float) $cell['usage'])) ?></small>
+                                        <?php else: ?>
+                                            <strong><?= html(fmt((float) $cell['usage'])) ?></strong>
+                                        <?php endif; ?>
                                         <?php if ($cell['estimated']): ?>
                                             <small class="estimate-pill">Odhad</small>
                                         <?php endif; ?>

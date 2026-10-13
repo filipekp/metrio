@@ -78,6 +78,8 @@ final class ReadingOverview
                     'readings' => $dayReadings,
                     'previous_date' => $previousDate,
                     'usage' => null,
+                    'usage_high' => null,
+                    'usage_low' => null,
                     'estimated' => false,
                     'reason' => 'Chybí předchozí odečet.',
                 ];
@@ -104,6 +106,10 @@ final class ReadingOverview
                         $cell['reason'] = 'Chybí souvislé podklady pro výpočet (např. při výměně nebo u NT).';
                     } else {
                         $cell['usage'] = round((float) $usage['value'] * $factor, 4);
+                        $cell['usage_high'] = round((float) $usage['value_high'] * $factor, 4);
+                        $cell['usage_low'] = $usage['value_low'] === null
+                            ? null
+                            : round((float) $usage['value_low'] * $factor, 4);
                         $cell['estimated'] = (bool) $usage['estimated'];
                         $cell['reason'] = '';
                     }

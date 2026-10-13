@@ -123,7 +123,8 @@ final class Consumption {
     public static function deviceUsage(array $devices,array $seriesByDevice,string $start,string $end, bool $includeLowTariff = false): ?array {
         self::dayNumber($start);self::dayNumber($end);
         if($start >= $end) throw new RuntimeException('Chybné období.');
-        $total=0.0;$estimated=false;$count=0;$firstMethod=null;$lastMethod=null;$warnings=[];
+        $total=0.0;$highTotal=0.0;$lowTotal=0.0;$hasLowTariff=false;
+        $estimated=false;$count=0;$firstMethod=null;$lastMethod=null;$warnings=[];
         usort($devices,static function ($a,$b) {return strcmp($a['installed_on'],$b['installed_on']);});
         foreach($devices as $device) {
             $installed=(string)$device['installed_on'];$removed=$device['removed_on'];
@@ -141,7 +142,8 @@ final class Consumption {
             ksort($dates,SORT_STRING);$observations=array_values($dates);
             $a=self::boundary($observations,$aDate);$b=self::boundary($observations,$bDate);
             if(!$a || !$b || $b['value']+0.00001 < $a['value']) return null;
-            $total+=$b['value']-$a['value'];$count++;
+            $segmentHigh=$b['value']-$a['value'];
+            $total+=$segmentHigh;$highTotal+=$segmentHigh;$count++;
             if($firstMethod===null) $firstMethod=$a['method'];
             $lastMethod=$b['method'];
             $estimated=$estimated || $a['method']!=='actual' || $b['method']!=='actual';
@@ -180,7 +182,8 @@ final class Consumption {
                         if (!$lowA || !$lowB || $lowB['value'] + 0.00001 < $lowA['value']) {
                             return null;
                         }
-                        $total += $lowB['value'] - $lowA['value'];
+                        $segmentLow=$lowB['value']-$lowA['value'];
+                        $total+=$segmentLow;$lowTotal+=$segmentLow;$hasLowTariff=true;
                         $estimated = $estimated || $lowA['method'] !== 'actual' || $lowB['method'] !== 'actual';
                         if ($lowA['method'] === 'projected' || $lowB['method'] === 'projected') {
                             $warnings[] = 'Nízký tarif: extrapolace zařízení #'.$device['id'].'.';
@@ -193,8 +196,16 @@ final class Consumption {
             }
         }
         if($count===0) return null;
-        return ['value'=>round($total,4),'estimated'=>$estimated,'from'=>$firstMethod,'to'=>$lastMethod,
-            'warnings'=>$warnings,'segments'=>$count];
+        return [
+            'value'=>round($total,4),
+            'value_high'=>round($highTotal,4),
+            'value_low'=>$hasLowTariff ? round($lowTotal,4) : null,
+            'estimated'=>$estimated,
+            'from'=>$firstMethod,
+            'to'=>$lastMethod,
+            'warnings'=>$warnings,
+            'segments'=>$count,
+        ];
     }
 
     /** Načtení podkladů jednou; graf je pak může použít pro řadu období bez opakování SQL. */
