@@ -31,6 +31,10 @@ $views=[
         'meterChoices'=>[], 'selectedMeterId'=>0,'reviewUnit'=>'kWh','electricMeterIds'=>[]],
     'consumption'=>['u'=>$u,'labels'=>$labels,'from'=>'2026-01-01','to'=>'2026-02-01',
         'selectedId'=>0,'energy'=>'all','options'=>[],'error'=>'Bez jednotky'],
+    'reading_overview'=>['u'=>$u,'labels'=>$labels,'from'=>'2026-01-01','to'=>'2026-02-01',
+        'selectedBuilding'=>0,'selectedUnit'=>0,'energy'=>'','buildingOptions'=>[],
+        'unitOptions'=>[],'availableEnergies'=>[],'overview'=>['meters'=>[],'rows'=>[]],
+        'error'=>null],
     'update'=>['u'=>$u,'release'=>null,'updateAvailable'=>false,'updateError'=>'Bez spojení'],
 ];
 foreach ($views as $name=>$data) {
