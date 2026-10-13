@@ -89,7 +89,7 @@ declare(strict_types=1);
                             <?php foreach ($overview['meters'] as $meter): ?>
                                 <th scope="col">
                                     <span class="reading-overview-meter-type">
-                                        <?= empty($meter['parent_id']) ? 'HL' : 'POD' ?>
+                                        <?= empty($meter['parent_id']) ? '👤' : '👥' ?>
                                     </span>
                                     <?= html($meter['name']) ?>
                                     <?php if (!empty($meter['unit_name'])): ?>
