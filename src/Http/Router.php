@@ -18,6 +18,7 @@ function metrio_routes(): array {
         'readings'     => ['Readings',    'Odečty', false],
         'photo_review' => ['Readings',    'Kontrola odečtu z fotografie', false],
         'consumption'  => ['Consumption', 'Vývoj a výpočet spotřeby', false],
+        'reading_overview' => ['Consumption', 'Přehled odečtů po dnech', false],
         'update'       => ['Updates',     'Aktualizace GitHub Releases', true],
     ];
 }
