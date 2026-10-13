@@ -160,7 +160,7 @@ declare(strict_types=1);
         </div>
 
         <p class="muted">
-            HL = hlavní měřidlo, POD = podružné měřidlo.
+            👤 = hlavní měřidlo, 👥 = podružné měřidlo.
             Výpočet přes výměnu zařízení vyžaduje úplné předávací stavy.
             Odhadované intervaly jsou výslovně označeny.
         </p>
