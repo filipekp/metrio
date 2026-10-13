@@ -104,3 +104,81 @@ table{width:100%;border-collapse:separate;border-spacing:0;min-width:560px;line-
   outline: 2px solid #544bc0;
   outline-offset: 3px;
 }
+
+
+/* Přehled skutečných odečtů: mnoho měřidel lze procházet vodorovně. */
+.reading-overview-scroll {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  border-radius: 10px;
+}
+
+.reading-overview-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.reading-overview-table th,
+.reading-overview-table td {
+  min-width: 155px;
+  padding: 12px 14px;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.reading-overview-table thead th {
+  background: #f1f4fa;
+  font-size: 0.82rem;
+  text-align: left;
+}
+
+.reading-overview-table thead tr:first-child th {
+  text-align: center;
+  border-bottom: 1px solid #dce3ee;
+}
+
+.reading-overview-table .reading-overview-date {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  min-width: 122px;
+  background: #fff;
+  box-shadow: 1px 0 0 #e4e9f2;
+}
+
+.reading-overview-table thead .reading-overview-date {
+  z-index: 2;
+  background: #f1f4fa;
+}
+
+.reading-overview-table th small,
+.reading-overview-table td small {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.76rem;
+  font-weight: 400;
+  white-space: normal;
+}
+
+.reading-overview-value + .reading-overview-value {
+  padding-top: 8px;
+  border-top: 1px solid #e4e9f2;
+  margin-top: 8px;
+}
+
+.reading-overview-meter-type {
+  display: inline-block;
+  margin-right: 4px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #697b9b;
+}
+
+.reading-overview-scroll:focus-visible {
+  outline: 2px solid #544bc0;
+  outline-offset: 3px;
+}
