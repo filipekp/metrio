@@ -37,6 +37,7 @@ function metrio_navigation(array $user): array {
         'Hlavní nabídka' => [
             'dashboard' => ['Přehled', 'overview'],
             'consumption' => ['Spotřeby a grafy', 'chart'],
+            'reading_overview' => ['Tabulka odečtů', 'readings'],
             'readings' => ['Odečty', 'readings'],
             'meters' => ['Měřidla', 'meters'],
             'units' => ['Byty a jednotky', 'units'],
