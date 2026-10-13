@@ -144,12 +144,11 @@ declare(strict_types=1);
                                         <small><?= html($cell['reason']) ?></small>
                                     <?php else: ?>
                                         <?php if ($energy === 'electricity'): ?>
-                                            <strong>VT: <?= html(fmt((float) $cell['usage_high'])) ?></strong>
+                                            <strong>Celkem: <?= html(fmt((float) $cell['usage'])) ?></strong>
+                                            <small>VT: <?= html(fmt((float) $cell['usage_high'])) ?></small>
                                             <small>
-                                                NT:
-                                                <?= $cell['usage_low'] === null ? '—' : html(fmt((float) $cell['usage_low'])) ?>
+                                                NT: <?= $cell['usage_low'] === null ? '—' : html(fmt((float) $cell['usage_low'])) ?>
                                             </small>
-                                            <small>Celkem: <?= html(fmt((float) $cell['usage'])) ?></small>
                                         <?php else: ?>
                                             <strong><?= html(fmt((float) $cell['usage'])) ?></strong>
                                         <?php endif; ?>
