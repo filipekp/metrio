@@ -40,6 +40,7 @@ jobs:
           find src bin public templates tests -type f -name '*.php' -print0 | xargs -0 -n1 php -l
           php tests/consumption.php
           php tests/consumption_periods.php
+          php tests/reading_overview.php
           php tests/permissions.php
           php tests/php73_compatibility.php
           php tests/vision_gemini.php
