@@ -1,0 +1,1111 @@
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -40,6 +40,7 @@ jobs:
+           find src bin public templates tests -type f -name '*.php' -print0 | xargs -0 -n1 php -l
+           php tests/consumption.php
+           php tests/consumption_periods.php
++          php tests/reading_overview.php
+           php tests/permissions.php
+           php tests/php73_compatibility.php
+           php tests/vision_gemini.php
+diff --git a/public/assets/app.css b/public/assets/app.css
+--- a/public/assets/app.css
++++ b/public/assets/app.css
+@@ -26,3 +26,81 @@ table{width:100%;border-collapse:separate;border-spacing:0;min-width:560px;line-
+ @media (max-width: 1220px) {
+   .dashboard-energy .energy-tiles[data-count="3"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+ }
++
++
++/* Přehled skutečných odečtů: mnoho měřidel lze procházet vodorovně. */
++.reading-overview-scroll {
++  width: 100%;
++  max-width: 100%;
++  overflow-x: auto;
++  border-radius: 10px;
++}
++
++.reading-overview-table {
++  width: max-content;
++  min-width: 100%;
++  border-collapse: separate;
++  border-spacing: 0;
++}
++
++.reading-overview-table th,
++.reading-overview-table td {
++  min-width: 155px;
++  padding: 12px 14px;
++  vertical-align: top;
++  white-space: nowrap;
++}
++
++.reading-overview-table thead th {
++  background: #f1f4fa;
++  font-size: 0.82rem;
++  text-align: left;
++}
++
++.reading-overview-table thead tr:first-child th {
++  text-align: center;
++  border-bottom: 1px solid #dce3ee;
++}
++
++.reading-overview-table .reading-overview-date {
++  position: sticky;
++  left: 0;
++  z-index: 1;
++  min-width: 122px;
++  background: #fff;
++  box-shadow: 1px 0 0 #e4e9f2;
++}
++
++.reading-overview-table thead .reading-overview-date {
++  z-index: 2;
++  background: #f1f4fa;
++}
++
++.reading-overview-table th small,
++.reading-overview-table td small {
++  display: block;
++  margin-top: 4px;
++  font-size: 0.76rem;
++  font-weight: 400;
++  white-space: normal;
++}
++
++.reading-overview-value + .reading-overview-value {
++  padding-top: 8px;
++  border-top: 1px solid #e4e9f2;
++  margin-top: 8px;
++}
++
++.reading-overview-meter-type {
++  display: inline-block;
++  margin-right: 4px;
++  font-size: 0.68rem;
++  font-weight: 700;
++  letter-spacing: 0.05em;
++  color: #697b9b;
++}
++
++.reading-overview-scroll:focus-visible {
++  outline: 2px solid #544bc0;
++  outline-offset: 3px;
++}
+diff --git a/src/Http/Router.php b/src/Http/Router.php
+--- a/src/Http/Router.php
++++ b/src/Http/Router.php
+@@ -18,6 +18,7 @@ function metrio_routes(): array {
+         'readings'     => ['Readings',    'Odečty', false],
+         'photo_review' => ['Readings',    'Kontrola odečtu z fotografie', false],
+         'consumption'  => ['Consumption', 'Vývoj a výpočet spotřeby', false],
++        'reading_overview' => ['Consumption', 'Přehled odečtů po dnech', false],
+         'update'       => ['Updates',     'Aktualizace GitHub Releases', true],
+     ];
+ }
+diff --git a/src/Modules/Consumption/reading_overview.php b/src/Modules/Consumption/reading_overview.php
+new file mode 100644
+--- /dev/null
++++ b/src/Modules/Consumption/reading_overview.php
+@@ -0,0 +1,139 @@
++<?php
++declare(strict_types=1);
++
++// Nejdříve uplatníme stejná přístupová práva jako na stránce Odečty.
++$scopedMeters = meter_scope($u);
++$scopedUnits = unit_scope($u);
++$buildingOptions = [];
++$availableEnergies = [];
++$unitOptions = [];
++
++foreach ($scopedMeters as $meter) {
++    $buildingOptions[(int) $meter['building_id']] = (string) $meter['building_name'];
++}
++
++$selectedBuilding = (int) ($_GET['building_id'] ?? (array_key_first($buildingOptions) ?? 0));
++$selectedUnit = (int) ($_GET['unit_id'] ?? 0);
++$from = (string) ($_GET['from'] ?? date('Y-m-d', strtotime('-90 days')));
++$to = (string) ($_GET['to'] ?? date('Y-m-d'));
++$energy = (string) ($_GET['energy'] ?? '');
++$error = null;
++$overview = ['meters' => [], 'rows' => []];
++$selectedMeters = [];
++
++try {
++    valid_day($from);
++    valid_day($to);
++
++    if ($from > $to) {
++        throw new RuntimeException('Počátek období nesmí být později než konec.');
++    }
++    if ($selectedBuilding !== 0 && !isset($buildingOptions[$selectedBuilding])) {
++        throw new RuntimeException('K vybranému objektu nemáte přístup.');
++    }
++
++    foreach ($scopedUnits as $unit) {
++        if ((int) $unit['building_id'] === $selectedBuilding) {
++            $unitOptions[(int) $unit['id']] = (string) $unit['name'];
++        }
++    }
++    if ($selectedUnit !== 0 && !isset($unitOptions[$selectedUnit])) {
++        throw new RuntimeException('K vybrané jednotce nemáte přístup.');
++    }
++
++    foreach ($scopedMeters as $meter) {
++        if ((int) $meter['building_id'] !== $selectedBuilding) {
++            continue;
++        }
++        if ($selectedUnit !== 0 && (int) ($meter['unit_id'] ?? 0) !== $selectedUnit) {
++            continue;
++        }
++
++        $type = (string) $meter['type'];
++        $availableEnergies[$type] = $labels[$type] ?? $type;
++    }
++
++    if ($energy === '') {
++        $energy = isset($availableEnergies['electricity'])
++            ? 'electricity'
++            : (string) (array_key_first($availableEnergies) ?? '');
++    }
++    if ($energy !== '' && !isset($availableEnergies[$energy])) {
++        throw new RuntimeException('Pro vybraný rozsah není tato energie dostupná.');
++    }
++
++    foreach ($scopedMeters as $meter) {
++        if ((int) $meter['building_id'] !== $selectedBuilding) {
++            continue;
++        }
++        if ($selectedUnit !== 0 && (int) ($meter['unit_id'] ?? 0) !== $selectedUnit) {
++            continue;
++        }
++        if ($meter['type'] === $energy) {
++            $selectedMeters[] = $meter;
++        }
++    }
++
++    if ($selectedMeters) {
++        $ids = array_map(static function (array $meter): int {
++            return (int) $meter['id'];
++        }, $selectedMeters);
++        $placeholders = implode(',', array_fill(0, count($ids), '?'));
++
++        // Kromě intervalu načteme poslední odečet před jeho začátkem pro každé
++        // fyzické zařízení. První zobrazený přírůstek tak má skutečnou základnu.
++        $readings = all(
++            'SELECT r.meter_id, r.device_id, r.reading_date, r.value, r.value_low, d.serial
++             FROM meter_readings r
++             JOIN meter_devices d ON d.id = r.device_id
++             WHERE r.meter_id IN (' . $placeholders . ')
++               AND (
++                   r.reading_date BETWEEN ? AND ?
++                   OR r.reading_date = (
++                       SELECT MAX(p.reading_date)
++                       FROM meter_readings p
++                       WHERE p.device_id = r.device_id AND p.reading_date < ?
++                   )
++               )
++             ORDER BY r.reading_date, r.id',
++            array_merge($ids, [$from, $to, $from])
++        );
++
++        $devices = all(
++            'SELECT * FROM meter_devices WHERE meter_id IN (' . $placeholders . ')
++             ORDER BY meter_id, installed_on, id',
++            $ids
++        );
++        $coefficients = all(
++            'SELECT meter_id, effective_from, coefficient
++             FROM meter_coefficients WHERE meter_id IN (' . $placeholders . ')
++             ORDER BY meter_id, effective_from',
++            $ids
++        );
++
++        $overview = Energy\ReadingOverview::build(
++            $selectedMeters,
++            $readings,
++            $devices,
++            $coefficients,
++            $from,
++            $to
++        );
++    }
++} catch (Throwable $exception) {
++    $error = $exception->getMessage();
++}
++
++return compact(
++    'buildingOptions',
++    'unitOptions',
++    'availableEnergies',
++    'selectedBuilding',
++    'selectedUnit',
++    'selectedMeters',
++    'from',
++    'to',
++    'energy',
++    'overview',
++    'error'
++);
+diff --git a/src/ReadingOverview.php b/src/ReadingOverview.php
+new file mode 100644
+--- /dev/null
++++ b/src/ReadingOverview.php
+@@ -0,0 +1,145 @@
++<?php
++declare(strict_types=1);
++
++namespace Energy;
++
++/**
++ * Tabulkový přehled skutečných dnů odečtů.
++ *
++ * Spotřeba náleží intervalu mezi dvěma po sobě jdoucími odečty stejného
++ * logického měřicího místa; nevydává se za spotřebu jednoho kalendářního dne.
++ * Výměny fyzických zařízení řeší Consumption::deviceUsage().
++ */
++final class ReadingOverview
++{
++    /**
++     * @param array $meters Povolená a vyfiltrovaná měřidla
++     * @param array $readings Odečty včetně posledních odečtů před obdobím
++     * @param array $devices Fyzická zařízení vybraných měřidel
++     * @param array $coefficients Historie koeficientů vybraných měřidel
++     */
++    public static function build(
++        array $meters,
++        array $readings,
++        array $devices,
++        array $coefficients,
++        string $from,
++        string $to
++    ): array {
++        $meterIndex = [];
++        foreach ($meters as $meter) {
++            $meterIndex[(int) $meter['id']] = $meter;
++        }
++
++        $devicesByMeter = [];
++        foreach ($devices as $device) {
++            $devicesByMeter[(int) $device['meter_id']][] = $device;
++        }
++
++        $coefficientsByMeter = [];
++        foreach ($coefficients as $coefficient) {
++            $coefficientsByMeter[(int) $coefficient['meter_id']][] = $coefficient;
++        }
++        foreach ($coefficientsByMeter as &$history) {
++            usort($history, static function (array $a, array $b): int {
++                return strcmp((string) $a['effective_from'], (string) $b['effective_from']);
++            });
++        }
++        unset($history);
++
++        $series = [];
++        $events = [];
++        foreach ($readings as $reading) {
++            $meterId = (int) $reading['meter_id'];
++            if (!isset($meterIndex[$meterId])) {
++                continue;
++            }
++
++            $deviceId = (int) $reading['device_id'];
++            $date = (string) $reading['reading_date'];
++            $series[$deviceId][] = $reading;
++            $events[$date][$meterId][] = $reading;
++        }
++
++        ksort($events, SORT_STRING);
++        $previousByMeter = [];
++        $rows = [];
++
++        foreach ($events as $date => $readingsByMeter) {
++            foreach ($readingsByMeter as $meterId => $dayReadings) {
++                $previousDate = $previousByMeter[$meterId] ?? null;
++                $previousByMeter[$meterId] = $date;
++
++                if ($date < $from || $date > $to) {
++                    continue;
++                }
++
++                $cell = [
++                    'readings' => $dayReadings,
++                    'previous_date' => $previousDate,
++                    'usage' => null,
++                    'estimated' => false,
++                    'reason' => 'Chybí předchozí odečet.',
++                ];
++
++                if ($previousDate !== null && $previousDate < $date) {
++                    $includeLowTariff = $meterIndex[$meterId]['type'] === 'electricity';
++                    $usage = Consumption::deviceUsage(
++                        $devicesByMeter[$meterId] ?? [],
++                        $series,
++                        $previousDate,
++                        $date,
++                        $includeLowTariff
++                    );
++
++                    $factor = self::coefficientForInterval(
++                        $coefficientsByMeter[$meterId] ?? [],
++                        $previousDate,
++                        $date
++                    );
++
++                    if ($factor === null) {
++                        $cell['reason'] = 'Během intervalu se změnil koeficient.';
++                    } elseif ($usage === null) {
++                        $cell['reason'] = 'Chybí souvislé podklady pro výpočet (např. při výměně nebo u NT).';
++                    } else {
++                        $cell['usage'] = round((float) $usage['value'] * $factor, 4);
++                        $cell['estimated'] = (bool) $usage['estimated'];
++                        $cell['reason'] = '';
++                    }
++                }
++
++                $rows[$date]['date'] = $date;
++                $rows[$date]['cells'][$meterId] = $cell;
++            }
++        }
++
++        krsort($rows, SORT_STRING);
++
++        return [
++            'meters' => array_values($meterIndex),
++            'rows' => array_values($rows),
++        ];
++    }
++
++    /**
++     * Při změně koeficientu uvnitř intervalu neodhadujeme výslednou spotřebu.
++     * Koeficient platný přesně ke koncovému dni se použije až v dalším intervalu.
++     */
++    private static function coefficientForInterval(array $history, string $from, string $to): ?float
++    {
++        $factor = 1.0;
++        foreach ($history as $change) {
++            $date = (string) $change['effective_from'];
++            if ($date <= $from) {
++                $factor = (float) $change['coefficient'];
++            } elseif ($date < $to) {
++                return null;
++            } else {
++                break;
++            }
++        }
++
++        return $factor > 0 ? $factor : null;
++    }
++}
+diff --git a/src/View/Layout.php b/src/View/Layout.php
+--- a/src/View/Layout.php
++++ b/src/View/Layout.php
+@@ -37,6 +37,7 @@ function metrio_navigation(array $user): array {
+         'Hlavní nabídka' => [
+             'dashboard' => ['Přehled', 'overview'],
+             'consumption' => ['Spotřeby a grafy', 'chart'],
++            'reading_overview' => ['Tabulka odečtů', 'readings'],
+             'readings' => ['Odečty', 'readings'],
+             'meters' => ['Měřidla', 'meters'],
+             'units' => ['Byty a jednotky', 'units'],
+diff --git a/src/bootstrap.php b/src/bootstrap.php
+--- a/src/bootstrap.php
++++ b/src/bootstrap.php
+@@ -170,6 +170,7 @@ function page_description(string $page): string {
+     $labels=[
+         'dashboard'=>'Vše důležité o spotřebě a odečtech na jednom místě.',
+         'consumption'=>'Porovnávejte spotřebu jednotlivých energií v čase.',
++        'reading_overview'=>'Stavy měřidel a spotřeba mezi skutečnými dny odečtů.',
+         'readings'=>'Přidávejte stavy měřidel ručně nebo pomocí fotografie.',
+         'meters'=>'Přehled hlavních i podružných měřidel a jejich nastavení.',
+         'units'=>'Spravované byty, jednotky a jejich přiřazení.',
+diff --git a/templates/pages/consumption.php b/templates/pages/consumption.php
+--- a/templates/pages/consumption.php
++++ b/templates/pages/consumption.php
+@@ -1,43 +1,185 @@
+ <?php
+ declare(strict_types=1);
+ 
+-// Šablona stránky consumption. Zobrazuje data připravená controllerem.
+-echo '<section class="card"><h2>Vybrat období a jednotku</h2><form method="get" class="inline"><input type="hidden" name="page" value="consumption"><label>Období od <input type="date" name="from" value="'.html($from).'" required></label><label>Období do <input type="date" name="to" value="'.html($to).'" required></label>';
+-if ($options) echo '<label>Jednotka '.form_select('unit_id',$options,$selectedId).'</label>';
+-echo '<label>Graf energie '.form_select('energy',['all'=>'Všechny energie']+$labels,$energy).'</label><button>Zobrazit spotřebu</button></form>';
+-echo '<p class="muted">Datum nemusí odpovídat dni odečtu. V takovém případě systém použije poměrný odhad podle sousedních odečtů. Pokud chybí podklady, výsledek nevypočítá.</p></section>';
+-if ($error === null) {
+-    echo '<section class="card"><div class="section-head"><h2>Celková spotřeba: '.html($unitName).'</h2><a class="button secondary" href="?page=export&amp;from='.html(rawurlencode($from)).'&amp;to='.html(rawurlencode($to)).'">Export CSV všech dostupných jednotek</a></div>';
+-    echo '<table><tr><th>Energie</th><th>Spotřeba za období</th><th>Výpočet</th></tr>';
+-    $any=false;
+-    foreach (($result['allocations'][$selectedId]??[]) as $type=>$value) {
+-        $any=true;
+-        $estimated=!empty($result['estimated'][$selectedId][$type]);
+-        echo '<tr><td>'.html($labels[$type]??$type).'</td><td><strong>'.html(fmt((float)$value)).'</strong> '.($type==='electricity'?'kWh':'m³').'</td><td>'.($estimated?'<span class="estimate-pill">Odhad</span>':'<span class="actual-pill">Podle odečtů</span>').'</td></tr>';
+-    }
+-    if (!$any) echo '<tr><td colspan="3">K tomuto období není možné vypočítat spotřebu. Zkontrolujte dostupné odečty.</td></tr>';
+-    echo '</table></section>';
+-
+-    if(!$shownEnergies) echo '<section class="card"><p class="muted">Zatím není možné vykreslit žádný graf spotřeby. Zkontrolujte odečty.</p></section>';
+-    foreach($shownEnergies as $shownType) {
+-        echo '<section class="card"><h2>Graf vývoje – '.html($labels[$shownType]??$shownType).'</h2>';
+-        render_consumption_chart($report['periods'],$selectedId,$shownType);
+-        echo '</section>';
+-    }
+-    echo '<section class="card"><h2>Vývoj po obdobích – '.html($unitName).'</h2><table><tr><th>Období od</th><th>Do</th><th>Energie</th><th>Spotřeba</th><th>Výpočet</th></tr>';
+-    $rows=0;
+-    foreach ($report['periods'] as $period) foreach(($period['result']['allocations'][$selectedId]??[]) as $type=>$value) {
+-        $rows++;
+-        $estimated=!empty($period['result']['estimated'][$selectedId][$type]);
+-        echo '<tr><td>'.html($period['from']).'</td><td>'.html($period['to']).'</td><td>'.html($labels[$type]??$type).'</td><td>'.html(fmt((float)$value)).' '.($type==='electricity'?'kWh':'m³').'</td><td>'.($estimated?'Odhad':'Podle odečtů').'</td></tr>';
+-    }
+-    if (!$rows) echo '<tr><td colspan="5">Žádné vypočitatelné období.</td></tr>';
+-    echo '</table></section>';
+-    if(is_admin($u) && $result['warnings']) {
+-        echo '<section class="card warning"><h2>Upozornění při výpočtu</h2><ul>';
+-        foreach (array_unique($result['warnings']) as $warning) echo '<li>'.html($warning).'</li>';
+-        echo '</ul></section>';
+-    }
+-    if(!is_admin($u) && !is_manager($u)) echo '<p class="muted">Zobrazeny jsou pouze spotřeby vašich jednotek. Odečty cizích měřidel nejsou zpřístupněny.</p>';
+-    if(is_manager($u)) echo '<p class="muted">Zobrazeny jsou spotřeby spravovaných objektů. Měřidla a koeficienty nastavuje administrátor.</p>';
+-} else { echo '<p class="flash">'.html($error).'</p>'; }
++// Controller poskytuje validované období, výběr jednotky a vypočtený report.
++?>
++<section class="card">
++    <div class="section-head">
++        <h2>Vybrat období a jednotku</h2>
++        <a class="button secondary" href="?page=reading_overview">Tabulka odečtů po dnech</a>
++    </div>
++
++    <form method="get" class="inline">
++        <input type="hidden" name="page" value="consumption">
++
++        <label>
++            Období od
++            <input type="date" name="from" value="<?= html($from) ?>" required>
++        </label>
++
++        <label>
++            Období do
++            <input type="date" name="to" value="<?= html($to) ?>" required>
++        </label>
++
++        <?php if ($options): ?>
++            <label>
++                Jednotka
++                <?= form_select('unit_id', $options, $selectedId) ?>
++            </label>
++        <?php endif; ?>
++
++        <label>
++            Graf energie
++            <?= form_select('energy', ['all' => 'Všechny energie'] + $labels, $energy) ?>
++        </label>
++
++        <button type="submit">Zobrazit spotřebu</button>
++    </form>
++
++    <p class="muted">
++        Datum nemusí odpovídat dni odečtu. V takovém případě systém použije
++        poměrný odhad podle sousedních odečtů. Pokud chybí podklady,
++        výsledek nevypočítá.
++    </p>
++</section>
++
++<?php if ($error !== null): ?>
++    <p class="flash" role="alert"><?= html($error) ?></p>
++<?php else: ?>
++    <section class="card">
++        <div class="section-head">
++            <h2>Celková spotřeba: <?= html($unitName) ?></h2>
++            <a
++                class="button secondary"
++                href="?page=export&amp;from=<?= html(rawurlencode($from)) ?>&amp;to=<?= html(rawurlencode($to)) ?>"
++            >
++                Export CSV všech dostupných jednotek
++            </a>
++        </div>
++
++        <table>
++            <thead>
++                <tr>
++                    <th>Energie</th>
++                    <th>Spotřeba za období</th>
++                    <th>Výpočet</th>
++                </tr>
++            </thead>
++            <tbody>
++                <?php $hasAllocations = false; ?>
++                <?php foreach (($result['allocations'][$selectedId] ?? []) as $type => $value): ?>
++                    <?php
++                    $hasAllocations = true;
++                    $estimated = !empty($result['estimated'][$selectedId][$type]);
++                    ?>
++                    <tr>
++                        <td><?= html($labels[$type] ?? $type) ?></td>
++                        <td>
++                            <strong><?= html(fmt((float) $value)) ?></strong>
++                            <?= $type === 'electricity' ? 'kWh' : 'm³' ?>
++                        </td>
++                        <td>
++                            <?php if ($estimated): ?>
++                                <span class="estimate-pill">Odhad</span>
++                            <?php else: ?>
++                                <span class="actual-pill">Podle odečtů</span>
++                            <?php endif; ?>
++                        </td>
++                    </tr>
++                <?php endforeach; ?>
++
++                <?php if (!$hasAllocations): ?>
++                    <tr>
++                        <td colspan="3">
++                            K tomuto období není možné vypočítat spotřebu.
++                            Zkontrolujte dostupné odečty.
++                        </td>
++                    </tr>
++                <?php endif; ?>
++            </tbody>
++        </table>
++    </section>
++
++    <?php if (!$shownEnergies): ?>
++        <section class="card">
++            <p class="muted">
++                Zatím není možné vykreslit žádný graf spotřeby.
++                Zkontrolujte odečty.
++            </p>
++        </section>
++    <?php endif; ?>
++
++    <?php foreach ($shownEnergies as $shownType): ?>
++        <section class="card">
++            <h2>Graf vývoje – <?= html($labels[$shownType] ?? $shownType) ?></h2>
++            <?php render_consumption_chart($report['periods'], $selectedId, $shownType); ?>
++        </section>
++    <?php endforeach; ?>
++
++    <section class="card">
++        <h2>Vývoj po obdobích – <?= html($unitName) ?></h2>
++
++        <table>
++            <thead>
++                <tr>
++                    <th>Období od</th>
++                    <th>Do</th>
++                    <th>Energie</th>
++                    <th>Spotřeba</th>
++                    <th>Výpočet</th>
++                </tr>
++            </thead>
++            <tbody>
++                <?php $periodRowCount = 0; ?>
++                <?php foreach ($report['periods'] as $period): ?>
++                    <?php foreach (($period['result']['allocations'][$selectedId] ?? []) as $type => $value): ?>
++                        <?php
++                        $periodRowCount++;
++                        $estimated = !empty($period['result']['estimated'][$selectedId][$type]);
++                        ?>
++                        <tr>
++                            <td><?= html($period['from']) ?></td>
++                            <td><?= html($period['to']) ?></td>
++                            <td><?= html($labels[$type] ?? $type) ?></td>
++                            <td>
++                                <?= html(fmt((float) $value)) ?>
++                                <?= $type === 'electricity' ? 'kWh' : 'm³' ?>
++                            </td>
++                            <td><?= $estimated ? 'Odhad' : 'Podle odečtů' ?></td>
++                        </tr>
++                    <?php endforeach; ?>
++                <?php endforeach; ?>
++
++                <?php if (!$periodRowCount): ?>
++                    <tr>
++                        <td colspan="5">Žádné vypočitatelné období.</td>
++                    </tr>
++                <?php endif; ?>
++            </tbody>
++        </table>
++    </section>
++
++    <?php if (is_admin($u) && !empty($result['warnings'])): ?>
++        <section class="card warning">
++            <h2>Upozornění při výpočtu</h2>
++            <ul>
++                <?php foreach (array_unique($result['warnings']) as $warning): ?>
++                    <li><?= html($warning) ?></li>
++                <?php endforeach; ?>
++            </ul>
++        </section>
++    <?php endif; ?>
++
++    <?php if (!is_admin($u) && !is_manager($u)): ?>
++        <p class="muted">
++            Zobrazeny jsou pouze spotřeby vašich jednotek.
++            Odečty cizích měřidel nejsou zpřístupněny.
++        </p>
++    <?php elseif (is_manager($u)): ?>
++        <p class="muted">
++            Zobrazeny jsou spotřeby spravovaných objektů.
++            Měřidla a koeficienty nastavuje administrátor.
++        </p>
++    <?php endif; ?>
++<?php endif; ?>
+diff --git a/templates/pages/login.php b/templates/pages/login.php
+--- a/templates/pages/login.php
++++ b/templates/pages/login.php
+@@ -1,5 +1,30 @@
+ <?php
+-    declare(strict_types=1);
++declare(strict_types=1);
++?>
++<section class="card narrow">
++    <form method="post">
++        <?= post_token() ?>
+ 
+-// Šablona stránky login. Zobrazuje data připravená controllerem.
+-    echo '<section class="card narrow"><form method="post">' . post_token() . '<label>E-mail <input type="email" name="email" required autocomplete="username"></label><label>Heslo <input type="password" name="password" required autocomplete="current-password"></label><button>Přihlásit se</button></form></section>';
++        <label>
++            E-mail
++            <input
++                type="email"
++                name="email"
++                required
++                autocomplete="username"
++            >
++        </label>
++
++        <label>
++            Heslo
++            <input
++                type="password"
++                name="password"
++                required
++                autocomplete="current-password"
++            >
++        </label>
++
++        <button type="submit">Přihlásit se</button>
++    </form>
++</section>
+diff --git a/templates/pages/reading_overview.php b/templates/pages/reading_overview.php
+new file mode 100644
+--- /dev/null
++++ b/templates/pages/reading_overview.php
+@@ -0,0 +1,168 @@
++<?php
++declare(strict_types=1);
++
++// Stránka přehledu odečtů – všechna data a oprávnění připravuje controller.
++?>
++<section class="card">
++    <div class="section-head">
++        <h2>Tabulka odečtů a spotřeb</h2>
++        <a class="button secondary" href="?page=consumption">Grafy a souhrn spotřeby</a>
++    </div>
++
++    <form method="get" class="inline">
++        <input type="hidden" name="page" value="reading_overview">
++
++        <label>
++            Objekt
++            <?= form_select('building_id', $buildingOptions, $selectedBuilding) ?>
++        </label>
++
++        <label>
++            Rozsah
++            <?= form_select('unit_id', [0 => 'Celý objekt (dostupná měřidla)'] + $unitOptions, $selectedUnit) ?>
++        </label>
++
++        <label>
++            Energie
++            <?= form_select('energy', $availableEnergies, $energy) ?>
++        </label>
++
++        <label>
++            Od
++            <input type="date" name="from" value="<?= html($from) ?>" required>
++        </label>
++
++        <label>
++            Do
++            <input type="date" name="to" value="<?= html($to) ?>" required>
++        </label>
++
++        <button type="submit">Zobrazit přehled</button>
++    </form>
++
++    <p class="muted">
++        V řádku je skutečný den odečtu. Spotřeba znamená přírůstek od předchozího
++        odečtu <strong>téhož měřidla</strong>, nikoli denní průměr. Prázdné buňky
++        znamenají, že v daný den měřidlo odečteno nebylo.
++    </p>
++    <p class="muted">
++        Spotřeba hlavního měřidla zahrnuje i jeho podružná měřidla;
++        uvedené spotřeby se proto nesčítají. Hodnoty jsou po zohlednění
++        koeficientu měřidla. U elektřiny se sčítají VT a dostupný NT.
++    </p>
++</section>
++
++<?php if ($error !== null): ?>
++    <div class="flash" role="alert"><?= html($error) ?></div>
++<?php elseif (!$overview['meters']): ?>
++    <section class="card">
++        <p class="muted">Ve vybraném rozsahu nemáte žádná měřidla tohoto druhu energie.</p>
++    </section>
++<?php elseif (!$overview['rows']): ?>
++    <section class="card">
++        <p class="muted">V tomto období nejsou zaznamenány žádné odečty.</p>
++    </section>
++<?php else: ?>
++    <?php $usageUnit = $energy === 'electricity' ? 'kWh' : 'm³'; ?>
++
++    <section class="card">
++        <div class="section-head">
++            <h2>Přehled podle dnů</h2>
++            <span class="muted">
++                <?= count($overview['rows']) ?> dnů /
++                <?= count($overview['meters']) ?> měřidel
++            </span>
++        </div>
++
++        <div class="reading-overview-scroll" tabindex="0" aria-label="Posuvná tabulka odečtů">
++            <table class="reading-overview-table">
++                <thead>
++                    <tr>
++                        <th rowspan="2" scope="col" class="reading-overview-date">Datum odečtu</th>
++                        <th colspan="<?= count($overview['meters']) ?>" scope="colgroup">Stavy měřidel</th>
++                        <th colspan="<?= count($overview['meters']) ?>" scope="colgroup">
++                            Spotřeba od předchozího odečtu (<?= html($usageUnit) ?>)
++                        </th>
++                    </tr>
++                    <tr>
++                        <?php foreach (['state', 'usage'] as $columnType): ?>
++                            <?php foreach ($overview['meters'] as $meter): ?>
++                                <th scope="col">
++                                    <span class="reading-overview-meter-type">
++                                        <?= empty($meter['parent_id']) ? 'HL' : 'POD' ?>
++                                    </span>
++                                    <?= html($meter['name']) ?>
++                                    <?php if (!empty($meter['unit_name'])): ?>
++                                        <small><?= html($meter['unit_name']) ?></small>
++                                    <?php endif; ?>
++                                </th>
++                            <?php endforeach; ?>
++                        <?php endforeach; ?>
++                    </tr>
++                </thead>
++                <tbody>
++                    <?php foreach ($overview['rows'] as $row): ?>
++                        <tr>
++                            <th scope="row" class="reading-overview-date">
++                                <?= html(date('d.m.Y', strtotime($row['date']))) ?>
++                            </th>
++
++                            <?php foreach ($overview['meters'] as $meter): ?>
++                                <?php $cell = $row['cells'][(int) $meter['id']] ?? null; ?>
++                                <td>
++                                    <?php if ($cell === null): ?>
++                                        <span class="muted">—</span>
++                                    <?php else: ?>
++                                        <?php foreach ($cell['readings'] as $reading): ?>
++                                            <div class="reading-overview-value">
++                                                <?php if ($energy === 'electricity'): ?>
++                                                    VT: <?= html(fmt((float) $reading['value'])) ?>
++                                                <?php else: ?>
++                                                    <?= html(fmt((float) $reading['value'])) ?>
++                                                <?php endif; ?>
++
++                                                <?php if ($energy === 'electricity' && $reading['value_low'] !== null): ?>
++                                                    <small>NT: <?= html(fmt((float) $reading['value_low'])) ?></small>
++                                                <?php endif; ?>
++
++                                                <?php if (count($cell['readings']) > 1): ?>
++                                                    <small>Zařízení: <?= html($reading['serial'] ?: '#' . $reading['device_id']) ?></small>
++                                                <?php endif; ?>
++                                            </div>
++                                        <?php endforeach; ?>
++                                    <?php endif; ?>
++                                </td>
++                            <?php endforeach; ?>
++
++                            <?php foreach ($overview['meters'] as $meter): ?>
++                                <?php $cell = $row['cells'][(int) $meter['id']] ?? null; ?>
++                                <td>
++                                    <?php if ($cell === null): ?>
++                                        <span class="muted">—</span>
++                                    <?php elseif ($cell['usage'] === null): ?>
++                                        <span class="muted" title="<?= html($cell['reason']) ?>">—</span>
++                                        <small><?= html($cell['reason']) ?></small>
++                                    <?php else: ?>
++                                        <strong><?= html(fmt((float) $cell['usage'])) ?></strong>
++                                        <?php if ($cell['estimated']): ?>
++                                            <small class="estimate-pill">Odhad</small>
++                                        <?php endif; ?>
++                                        <small>
++                                            Od <?= html(date('d.m.Y', strtotime($cell['previous_date']))) ?>
++                                        </small>
++                                    <?php endif; ?>
++                                </td>
++                            <?php endforeach; ?>
++                        </tr>
++                    <?php endforeach; ?>
++                </tbody>
++            </table>
++        </div>
++
++        <p class="muted">
++            HL = hlavní měřidlo, POD = podružné měřidlo.
++            Výpočet přes výměnu zařízení vyžaduje úplné předávací stavy.
++            Odhadované intervaly jsou výslovně označeny.
++        </p>
++    </section>
++<?php endif; ?>
+diff --git a/templates/pages/readings.php b/templates/pages/readings.php
+--- a/templates/pages/readings.php
++++ b/templates/pages/readings.php
+@@ -1,12 +1,110 @@
+ <?php
+ declare(strict_types=1);
+ 
+-// Šablona stránky readings. Zobrazuje data připravená controllerem.
+-
+-echo '<section class="card"><h2>Ručně zadat odečet</h2><form method="post" class="inline" id="reading-form">'.post_token().'<input type="hidden" name="action" value="reading_add"><label>Měřidlo '.form_select('meter_id',$mopts).'</label><label>Datum odečtu <input type="date" name="reading_date" value="'.date('Y-m-d').'" required></label><label>Vysoký tarif (VT) / stav číselníku <input name="value" inputmode="decimal" required placeholder="1234,567"></label><label id="reading-low-tariff-field" hidden>Nízký tarif (NT), nepovinné <input name="value_low" inputmode="decimal" placeholder="např. 234,567"></label><button>Uložit</button><p id="reading-limits-message" class="muted" aria-live="polite"></p></form></section>';
+-echo '<script type="application/json" id="electric-meter-ids">'.json_encode($electricMeterIds).'</script>';
+-echo '<section class="card"><h2>Vyfotit měřidlo telefonem</h2><p class="muted">Otevřete tuto stránku na mobilu přes HTTPS. Po vyfotografování Google Gemini navrhne hodnotu (pokud je nastaven Gemini API klíč); návrh vždy před uložením zkontrolujete.</p><form method="post" enctype="multipart/form-data" class="inline">'.post_token().'<input type="hidden" name="action" value="photo_upload"><label>Měřidlo '.form_select('meter_id',$mopts).'</label><label>Fotografie <input type="file" name="photo" accept="image/jpeg,image/png,image/webp" capture="environment" required></label><button>Nahrát a rozpoznat</button></form></section>';
+-echo '<section class="card"><h2>Poslední odečty</h2><table><tr><th>Datum</th><th>Měřidlo</th><th>VT / stav</th><th>NT (nepovinné)</th><th>Zdroj</th></tr>';
+-foreach($recentReadings as $r)
+-        echo '<tr><td>'.html($r['reading_date']).'</td><td>'.html($r['name']).'</td><td>'.html($r['value']).'</td><td>'.html($r['value_low']??'—').'</td><td>'.html(reading_source_label($r['source'])).($r['photo_id']?' · <a href="?page=photo_review&id='.(int)$r['photo_id'].'">foto</a>':'').'</td></tr>';
+-echo '</table></section>';
++// Formuláře odečtů, fotografie a poslední záznamy.
++?>
++<section class="card">
++    <div class="section-head">
++        <h2>Ručně zadat odečet</h2>
++        <a class="button secondary" href="?page=reading_overview">Tabulka odečtů a spotřeb</a>
++    </div>
++
++    <form method="post" class="inline" id="reading-form">
++        <?= post_token() ?>
++        <input type="hidden" name="action" value="reading_add">
++
++        <label>
++            Měřidlo
++            <?= form_select('meter_id', $mopts) ?>
++        </label>
++
++        <label>
++            Datum odečtu
++            <input type="date" name="reading_date" value="<?= date('Y-m-d') ?>" required>
++        </label>
++
++        <label>
++            Vysoký tarif (VT) / stav číselníku
++            <input name="value" inputmode="decimal" required placeholder="1234,567">
++        </label>
++
++        <label id="reading-low-tariff-field" hidden>
++            Nízký tarif (NT), nepovinné
++            <input name="value_low" inputmode="decimal" placeholder="např. 234,567">
++        </label>
++
++        <button type="submit">Uložit</button>
++        <p id="reading-limits-message" class="muted" aria-live="polite"></p>
++    </form>
++</section>
++
++<script type="application/json" id="electric-meter-ids"><?= json_encode($electricMeterIds) ?></script>
++
++<section class="card">
++    <h2>Vyfotit měřidlo telefonem</h2>
++    <p class="muted">
++        Otevřete tuto stránku na mobilu přes HTTPS. Po vyfotografování
++        Google Gemini navrhne hodnotu (pokud je nastaven Gemini API klíč);
++        návrh vždy před uložením zkontrolujete.
++    </p>
++
++    <form method="post" enctype="multipart/form-data" class="inline">
++        <?= post_token() ?>
++        <input type="hidden" name="action" value="photo_upload">
++
++        <label>
++            Měřidlo
++            <?= form_select('meter_id', $mopts) ?>
++        </label>
++
++        <label>
++            Fotografie
++            <input
++                type="file"
++                name="photo"
++                accept="image/jpeg,image/png,image/webp"
++                capture="environment"
++                required
++            >
++        </label>
++
++        <button type="submit">Nahrát a rozpoznat</button>
++    </form>
++</section>
++
++<section class="card">
++    <h2>Poslední odečty</h2>
++
++    <table>
++        <thead>
++            <tr>
++                <th>Datum</th>
++                <th>Měřidlo</th>
++                <th>VT / stav</th>
++                <th>NT (nepovinné)</th>
++                <th>Zdroj</th>
++            </tr>
++        </thead>
++        <tbody>
++            <?php foreach ($recentReadings as $reading): ?>
++                <tr>
++                    <td><?= html($reading['reading_date']) ?></td>
++                    <td><?= html($reading['name']) ?></td>
++                    <td><?= html($reading['value']) ?></td>
++                    <td><?= html($reading['value_low'] ?? '—') ?></td>
++                    <td>
++                        <?= html(reading_source_label($reading['source'])) ?>
++                        <?php if ($reading['photo_id']): ?>
++                            · <a href="?page=photo_review&amp;id=<?= (int) $reading['photo_id'] ?>">foto</a>
++                        <?php endif; ?>
++                    </td>
++                </tr>
++            <?php endforeach; ?>
++            <?php if (!$recentReadings): ?>
++                <tr>
++                    <td colspan="5">Zatím žádné odečty.</td>
++                </tr>
++            <?php endif; ?>
++        </tbody>
++    </table>
++</section>
+diff --git a/tests/module_structure.php b/tests/module_structure.php
+--- a/tests/module_structure.php
++++ b/tests/module_structure.php
+@@ -1,7 +1,7 @@
+ <?php
+ declare(strict_types=1);
+ $root=dirname(__DIR__);
+-$pages=['login','dashboard','buildings','units','users','meters','readings','photo_review','consumption','update'];
++$pages=['login','dashboard','buildings','units','users','meters','readings','photo_review','consumption','reading_overview','update'];
+ foreach ($pages as $page) {
+     if(!is_file($root.'/templates/pages/'.$page.'.php')) throw new RuntimeException('Chybí šablona: '.$page);
+ }
+@@ -16,5 +16,5 @@
+     if($page!=='login' && !is_file($root.'/src/Modules/'.$routes[$page][0].'/'.$page.'.php')) throw new RuntimeException('Chybí controller: '.$page);
+ }
+ foreach (['users','buildings','update'] as $page) if(!$routes[$page][2]) throw new RuntimeException('Není chráněna administrace: '.$page);
+-foreach (['dashboard','units','meters','readings','consumption','photo_review'] as $page) if($routes[$page][2]) throw new RuntimeException('Běžná stránka chybně omezena na admina: '.$page);
++foreach (['dashboard','units','meters','readings','consumption','reading_overview','photo_review'] as $page) if($routes[$page][2]) throw new RuntimeException('Běžná stránka chybně omezena na admina: '.$page);
+ echo "Struktura modulů a rout OK\n";
+diff --git a/tests/reading_overview.php b/tests/reading_overview.php
+new file mode 100644
+--- /dev/null
++++ b/tests/reading_overview.php
+@@ -0,0 +1,88 @@
++<?php
++declare(strict_types=1);
++
++require dirname(__DIR__) . '/src/bootstrap.php';
++
++use Energy\ReadingOverview;
++
++function expect_overview(bool $condition, string $message): void
++{
++    if (!$condition) {
++        throw new RuntimeException($message);
++    }
++}
++
++$meters = [
++    ['id' => 1, 'name' => 'Hlavní', 'type' => 'electricity', 'parent_id' => null],
++    ['id' => 2, 'name' => 'Podružný', 'type' => 'electricity', 'parent_id' => 1],
++];
++$devices = [
++    [
++        'id' => 10, 'meter_id' => 1, 'installed_on' => '2026-01-01',
++        'removed_on' => '2026-01-10', 'opening_value' => 100,
++        'closing_value' => 120, 'opening_value_low' => 40, 'closing_value_low' => 45,
++    ],
++    [
++        'id' => 11, 'meter_id' => 1, 'installed_on' => '2026-01-10',
++        'removed_on' => null, 'opening_value' => 5,
++        'closing_value' => null, 'opening_value_low' => 1, 'closing_value_low' => null,
++    ],
++    [
++        'id' => 20, 'meter_id' => 2, 'installed_on' => '2026-01-01',
++        'removed_on' => null, 'opening_value' => 20,
++        'closing_value' => null, 'opening_value_low' => null, 'closing_value_low' => null,
++    ],
++];
++$readings = [
++    ['meter_id' => 1, 'device_id' => 10, 'reading_date' => '2026-01-01', 'value' => 100, 'value_low' => 40],
++    ['meter_id' => 2, 'device_id' => 20, 'reading_date' => '2026-01-01', 'value' => 20, 'value_low' => null],
++    ['meter_id' => 1, 'device_id' => 10, 'reading_date' => '2026-01-05', 'value' => 110, 'value_low' => 43],
++    ['meter_id' => 1, 'device_id' => 11, 'reading_date' => '2026-01-10', 'value' => 5, 'value_low' => 1],
++    ['meter_id' => 1, 'device_id' => 11, 'reading_date' => '2026-01-15', 'value' => 15, 'value_low' => 3],
++    ['meter_id' => 2, 'device_id' => 20, 'reading_date' => '2026-01-15', 'value' => 25, 'value_low' => null],
++];
++
++$report = ReadingOverview::build(
++    $meters,
++    $readings,
++    $devices,
++    [['meter_id' => 1, 'effective_from' => '2026-01-01', 'coefficient' => 2]],
++    '2026-01-05',
++    '2026-01-15'
++);
++
++expect_overview(count($report['rows']) === 3, 'Nesprávný počet dnů odečtů.');
++$byDate = [];
++foreach ($report['rows'] as $row) {
++    $byDate[$row['date']] = $row['cells'];
++}
++expect_overview(abs($byDate['2026-01-05'][1]['usage'] - 26.0) < 0.0001, 'VT + NT a koeficient.');
++expect_overview(abs($byDate['2026-01-10'][1]['usage'] - 24.0) < 0.0001, 'Výměna: dopočet starého zařízení.');
++expect_overview(abs($byDate['2026-01-15'][1]['usage'] - 24.0) < 0.0001, 'Výměna: nové zařízení.');
++expect_overview(abs($byDate['2026-01-15'][2]['usage'] - 5.0) < 0.0001, 'Podružné měřidlo.');
++expect_overview(!isset($byDate['2026-01-05'][2]), 'Bez odečtu nesmí vzniknout buňka.');
++
++$noBaseline = ReadingOverview::build(
++    [$meters[1]],
++    [['meter_id' => 2, 'device_id' => 20, 'reading_date' => '2026-01-15', 'value' => 25, 'value_low' => null]],
++    [$devices[2]],
++    [],
++    '2026-01-01',
++    '2026-01-31'
++);
++expect_overview($noBaseline['rows'][0]['cells'][2]['usage'] === null, 'Bez historie se nesmí vymýšlet spotřeba.');
++
++$changedFactor = ReadingOverview::build(
++    [$meters[1]],
++    [
++        ['meter_id' => 2, 'device_id' => 20, 'reading_date' => '2026-01-01', 'value' => 20, 'value_low' => null],
++        ['meter_id' => 2, 'device_id' => 20, 'reading_date' => '2026-01-15', 'value' => 25, 'value_low' => null],
++    ],
++    [$devices[2]],
++    [['meter_id' => 2, 'effective_from' => '2026-01-08', 'coefficient' => 1.5]],
++    '2026-01-01',
++    '2026-01-31'
++);
++expect_overview($changedFactor['rows'][0]['cells'][2]['usage'] === null, 'Změna koeficientu uvnitř intervalu.');
++
++echo "OK: tabulka skutečných odečtů, výměny a koeficienty\n";
+diff --git a/tests/templates.php b/tests/templates.php
+--- a/tests/templates.php
++++ b/tests/templates.php
+@@ -31,6 +31,10 @@
+         'meterChoices'=>[], 'selectedMeterId'=>0,'reviewUnit'=>'kWh','electricMeterIds'=>[]],
+     'consumption'=>['u'=>$u,'labels'=>$labels,'from'=>'2026-01-01','to'=>'2026-02-01',
+         'selectedId'=>0,'energy'=>'all','options'=>[],'error'=>'Bez jednotky'],
++    'reading_overview'=>['u'=>$u,'labels'=>$labels,'from'=>'2026-01-01','to'=>'2026-02-01',
++        'selectedBuilding'=>0,'selectedUnit'=>0,'energy'=>'','buildingOptions'=>[],
++        'unitOptions'=>[],'availableEnergies'=>[],'overview'=>['meters'=>[],'rows'=>[]],
++        'error'=>null],
+     'update'=>['u'=>$u,'release'=>null,'updateAvailable'=>false,'updateError'=>'Bez spojení'],
+ ];
+ foreach ($views as $name=>$data) {
